@@ -16,6 +16,8 @@ my $patroni_urls = $ENV{PATRONI_URLS};
 my $user         = $ENV{PGUSER}     || 'testuser';
 my $pass         = $ENV{PGPASSWORD} || 'testpass';
 my $dbname       = $ENV{PGDATABASE} || 'testdb';
+my $sslmode      = $ENV{PGSSLMODE}  || 'disable';
+my $dsn          = "dbname=$dbname;sslmode=$sslmode";
 
 # Helper to get cluster info
 sub get_cluster_info {
@@ -77,7 +79,7 @@ subtest 'Detect current leader' => sub {
 # Test 2: Connection survives leader change
 subtest 'Connection survives leader change' => sub {
     my $dbh = DBD::Patroni->connect(
-        "dbname=$dbname",
+        $dsn,
         $user, $pass,
         { patroni_url => $patroni_urls }
     );
@@ -146,7 +148,7 @@ subtest 'New connection after failover' => sub {
     # Create a fresh connection after the failover
     my $dbh = eval {
         DBD::Patroni->connect(
-            "dbname=$dbname",
+            $dsn,
             $user, $pass,
             { patroni_url => $patroni_urls }
         );

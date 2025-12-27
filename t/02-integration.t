@@ -14,14 +14,17 @@ my $patroni_urls = $ENV{PATRONI_URLS};
 my $user         = $ENV{PGUSER}     || 'testuser';
 my $pass         = $ENV{PGPASSWORD} || 'testpass';
 my $dbname       = $ENV{PGDATABASE} || 'testdb';
+my $sslmode      = $ENV{PGSSLMODE}  || 'disable';
 
 diag("Testing with Patroni URLs: $patroni_urls");
+
+my $dsn = "dbname=$dbname;sslmode=$sslmode";
 
 # Test 1: Basic connection
 subtest 'Basic connection' => sub {
     my $dbh = eval {
         DBD::Patroni->connect(
-            "dbname=$dbname",
+            $dsn,
             $user, $pass,
             { patroni_url => $patroni_urls }
         );
@@ -37,7 +40,7 @@ subtest 'Basic connection' => sub {
 # Test 2: Read/Write routing
 subtest 'Read/Write routing' => sub {
     my $dbh = DBD::Patroni->connect(
-        "dbname=$dbname",
+        $dsn,
         $user, $pass,
         { patroni_url => $patroni_urls }
     );
@@ -75,7 +78,7 @@ subtest 'Read/Write routing' => sub {
 # Test 3: Transaction handling
 subtest 'Transaction handling' => sub {
     my $dbh = DBD::Patroni->connect(
-        "dbname=$dbname",
+        $dsn,
         $user, $pass,
         {
             patroni_url => $patroni_urls,
@@ -119,7 +122,7 @@ subtest 'Transaction handling' => sub {
 subtest 'Load balancing modes' => sub {
     # Test leader_only mode
     my $dbh = DBD::Patroni->connect(
-        "dbname=$dbname",
+        $dsn,
         $user, $pass,
         {
             patroni_url => $patroni_urls,
@@ -139,7 +142,7 @@ subtest 'Load balancing modes' => sub {
 
     # Test random mode
     $dbh = DBD::Patroni->connect(
-        "dbname=$dbname",
+        $dsn,
         $user, $pass,
         {
             patroni_url => $patroni_urls,
@@ -152,7 +155,7 @@ subtest 'Load balancing modes' => sub {
 
     # Test round_robin mode (default)
     $dbh = DBD::Patroni->connect(
-        "dbname=$dbname",
+        $dsn,
         $user, $pass,
         {
             patroni_url => $patroni_urls,
@@ -167,7 +170,7 @@ subtest 'Load balancing modes' => sub {
 # Test 5: Multiple queries
 subtest 'Multiple queries' => sub {
     my $dbh = DBD::Patroni->connect(
-        "dbname=$dbname",
+        $dsn,
         $user, $pass,
         { patroni_url => $patroni_urls }
     );
@@ -200,7 +203,7 @@ subtest 'Multiple queries' => sub {
 # Test 6: Error handling
 subtest 'Error handling' => sub {
     my $dbh = DBD::Patroni->connect(
-        "dbname=$dbname",
+        $dsn,
         $user, $pass,
         {
             patroni_url => $patroni_urls,
@@ -220,7 +223,7 @@ subtest 'Error handling' => sub {
 # Test 7: Prepare with placeholders
 subtest 'Prepare with placeholders' => sub {
     my $dbh = DBD::Patroni->connect(
-        "dbname=$dbname",
+        $dsn,
         $user, $pass,
         { patroni_url => $patroni_urls }
     );

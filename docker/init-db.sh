@@ -1,6 +1,18 @@
 #!/bin/bash
 set -e
 
+# Update pg_hba.conf to allow connections from Docker network without SSL
+# This is needed for integration tests
+PG_HBA=$(psql -U postgres -t -c "SHOW hba_file")
+echo "Updating $PG_HBA to allow testuser connections..."
+
+# Add rule for testuser from all hosts with md5 authentication
+echo "host testdb testuser 0.0.0.0/0 md5" >> "$PG_HBA"
+echo "host testdb testuser ::/0 md5" >> "$PG_HBA"
+
+# Reload PostgreSQL configuration
+psql -U postgres -c "SELECT pg_reload_conf();"
+
 # Create test user and database
 psql -U postgres <<-EOSQL
     CREATE USER testuser PASSWORD 'testpass';
