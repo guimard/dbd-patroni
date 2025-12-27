@@ -20,7 +20,7 @@ require DBD::Pg;
 
 # Discover Patroni cluster via REST API
 sub _discover_cluster {
-    my ($urls, $timeout) = @_;
+    my ( $urls, $timeout ) = @_;
     $timeout //= 3;
 
     require LWP::UserAgent;
@@ -31,18 +31,18 @@ sub _discover_cluster {
         env_proxy => 1,
     );
 
-    for my $url (split /[,\s]+/, $urls) {
+    for my $url ( split /[,\s]+/, $urls ) {
         next unless $url;
         my $resp = $ua->get($url);
         next unless $resp->is_success;
 
-        my $data = eval { JSON::decode_json($resp->decoded_content) };
-        next if $@ or !$data->{members} or ref($data->{members}) ne 'ARRAY';
+        my $data = eval { JSON::decode_json( $resp->decoded_content ) };
+        next if $@ or !$data->{members} or ref( $data->{members} ) ne 'ARRAY';
 
-        my ($leader) = grep { $_->{role} eq 'leader' } @{$data->{members}};
-        my @replicas = grep { $_->{role} ne 'leader' } @{$data->{members}};
+        my ($leader) = grep { $_->{role} eq 'leader' } @{ $data->{members} };
+        my @replicas = grep { $_->{role} ne 'leader' } @{ $data->{members} };
 
-        return ($leader, @replicas) if $leader;
+        return ( $leader, @replicas ) if $leader;
     }
     die "DBD::Patroni: Cannot discover cluster from: $urls\n";
 }
@@ -51,19 +51,19 @@ sub _discover_cluster {
 our $rr_idx = 0;
 
 sub _select_replica {
-    my ($replicas, $mode) = @_;
+    my ( $replicas, $mode ) = @_;
     return undef unless $replicas && @$replicas;
 
     $mode //= 'round_robin';
 
-    if ($mode eq 'random') {
-        return $replicas->[int(rand(@$replicas))];
+    if ( $mode eq 'random' ) {
+        return $replicas->[ int( rand(@$replicas) ) ];
     }
-    elsif ($mode eq 'leader_only') {
+    elsif ( $mode eq 'leader_only' ) {
         return undef;
     }
     else {    # round_robin
-        return $replicas->[$rr_idx++ % @$replicas];
+        return $replicas->[ $rr_idx++ % @$replicas ];
     }
 }
 
@@ -71,26 +71,28 @@ sub _select_replica {
 sub _is_readonly {
     my $sql = shift;
     return 0 unless defined $sql;
+
     # SELECT or WITH ... SELECT (CTE)
     return $sql =~ /^\s*(SELECT|WITH\s+\w+.*?\bSELECT)\b/si ? 1 : 0;
 }
 
 # Main connect function - returns a DBD::Patroni::db object
 sub connect {
-    my ($class, $dsn, $user, $pass, $attr) = @_;
+    my ( $class, $dsn, $user, $pass, $attr ) = @_;
 
     $attr //= {};
 
     # Extract Patroni-specific attributes
     my $patroni_url     = delete $attr->{patroni_url};
-    my $patroni_lb      = delete $attr->{patroni_lb} // 'round_robin';
+    my $patroni_lb      = delete $attr->{patroni_lb}      // 'round_robin';
     my $patroni_timeout = delete $attr->{patroni_timeout} // 3;
 
     die "DBD::Patroni: patroni_url attribute is required\n"
-        unless $patroni_url;
+      unless $patroni_url;
 
     # Discover cluster
-    my ($leader, @replicas) = _discover_cluster($patroni_url, $patroni_timeout);
+    my ( $leader, @replicas ) =
+      _discover_cluster( $patroni_url, $patroni_timeout );
 
     # Build leader DSN
     my $leader_dsn = $dsn;
@@ -98,30 +100,26 @@ sub connect {
     $leader_dsn .= ";host=$leader->{host};port=$leader->{port}";
 
     # Connect to leader
-    my $leader_dbh = DBI->connect(
-        "dbi:Pg:$leader_dsn",
-        $user, $pass,
-        { %$attr, RaiseError => 1 }
-    ) or die "DBD::Patroni: Cannot connect to leader: $DBI::errstr\n";
+    my $leader_dbh =
+      DBI->connect( "dbi:Pg:$leader_dsn", $user, $pass,
+        { %$attr, RaiseError => 1 } )
+      or die "DBD::Patroni: Cannot connect to leader: $DBI::errstr\n";
 
     # Connect to replica (if available and not leader_only mode)
     my $replica_dbh;
-    if (@replicas && $patroni_lb ne 'leader_only') {
-        my $replica = _select_replica(\@replicas, $patroni_lb);
+    if ( @replicas && $patroni_lb ne 'leader_only' ) {
+        my $replica = _select_replica( \@replicas, $patroni_lb );
         if ($replica) {
             my $replica_dsn = $dsn;
             $replica_dsn =~ s/(?:host|port)=[^;]*;?//gi;
             $replica_dsn .= ";host=$replica->{host};port=$replica->{port}";
 
             $replica_dbh = eval {
-                DBI->connect(
-                    "dbi:Pg:$replica_dsn",
-                    $user, $pass,
-                    { %$attr, RaiseError => 1 }
-                );
+                DBI->connect( "dbi:Pg:$replica_dsn", $user, $pass,
+                    { %$attr, RaiseError => 1 } );
             };
             warn "DBD::Patroni: Cannot connect to replica, using leader: $@\n"
-                if $@ && !$replica_dbh;
+              if $@ && !$replica_dbh;
         }
     }
     $replica_dbh //= $leader_dbh;
@@ -144,20 +142,21 @@ sub connect {
 
 # Cached connect function - uses DBI->connect_cached for underlying connections
 sub connect_cached {
-    my ($class, $dsn, $user, $pass, $attr) = @_;
+    my ( $class, $dsn, $user, $pass, $attr ) = @_;
 
     $attr //= {};
 
     # Extract Patroni-specific attributes
     my $patroni_url     = delete $attr->{patroni_url};
-    my $patroni_lb      = delete $attr->{patroni_lb} // 'round_robin';
+    my $patroni_lb      = delete $attr->{patroni_lb}      // 'round_robin';
     my $patroni_timeout = delete $attr->{patroni_timeout} // 3;
 
     die "DBD::Patroni: patroni_url attribute is required\n"
-        unless $patroni_url;
+      unless $patroni_url;
 
     # Discover cluster
-    my ($leader, @replicas) = _discover_cluster($patroni_url, $patroni_timeout);
+    my ( $leader, @replicas ) =
+      _discover_cluster( $patroni_url, $patroni_timeout );
 
     # Build leader DSN
     my $leader_dsn = $dsn;
@@ -165,16 +164,15 @@ sub connect_cached {
     $leader_dsn .= ";host=$leader->{host};port=$leader->{port}";
 
     # Connect to leader using DBI's cached connection mechanism
-    my $leader_dbh = DBI->connect_cached(
-        "dbi:Pg:$leader_dsn",
-        $user, $pass,
-        { %$attr, RaiseError => 1, private_patroni_role => 'leader' }
-    ) or die "DBD::Patroni: Cannot connect to leader: $DBI::errstr\n";
+    my $leader_dbh =
+      DBI->connect_cached( "dbi:Pg:$leader_dsn", $user, $pass,
+        { %$attr, RaiseError => 1, private_patroni_role => 'leader' } )
+      or die "DBD::Patroni: Cannot connect to leader: $DBI::errstr\n";
 
     # Connect to replica (if available and not leader_only mode)
     my $replica_dbh;
-    if (@replicas && $patroni_lb ne 'leader_only') {
-        my $replica = _select_replica(\@replicas, $patroni_lb);
+    if ( @replicas && $patroni_lb ne 'leader_only' ) {
+        my $replica = _select_replica( \@replicas, $patroni_lb );
         if ($replica) {
             my $replica_dsn = $dsn;
             $replica_dsn =~ s/(?:host|port)=[^;]*;?//gi;
@@ -184,11 +182,15 @@ sub connect_cached {
                 DBI->connect_cached(
                     "dbi:Pg:$replica_dsn",
                     $user, $pass,
-                    { %$attr, RaiseError => 1, private_patroni_role => 'replica' }
+                    {
+                        %$attr,
+                        RaiseError           => 1,
+                        private_patroni_role => 'replica'
+                    }
                 );
             };
             warn "DBD::Patroni: Cannot connect to replica, using leader: $@\n"
-                if $@ && !$replica_dbh;
+              if $@ && !$replica_dbh;
         }
     }
     $replica_dbh //= $leader_dbh;
@@ -219,7 +221,7 @@ use strict;
 use warnings;
 
 sub new {
-    my ($class, %args) = @_;
+    my ( $class, %args ) = @_;
     return bless {
         leader_dbh  => $args{leader_dbh},
         replica_dbh => $args{replica_dbh},
@@ -229,11 +231,11 @@ sub new {
 
 # Execute with automatic retry on failure
 sub _with_retry {
-    my ($self, $target, $code) = @_;
+    my ( $self, $target, $code ) = @_;
     my $result;
     my $wantarray = wantarray;
 
-    foreach my $attempt (0 .. 1) {
+    foreach my $attempt ( 0 .. 1 ) {
         my @results;
         eval {
             if ($wantarray) {
@@ -246,9 +248,11 @@ sub _with_retry {
 
         if ($@) {
             my $error = $@;
+
             # Only retry on connection errors, not SQL errors
-            if (_is_connection_error($error) && $attempt == 0) {
-                warn "DBD::Patroni: Connection error on $target, rediscovering cluster...\n";
+            if ( _is_connection_error($error) && $attempt == 0 ) {
+                warn
+"DBD::Patroni: Connection error on $target, rediscovering cluster...\n";
                 $self->_rediscover_cluster();
                 next;
             }
@@ -261,18 +265,32 @@ sub _with_retry {
 sub _is_connection_error {
     my $error = shift;
     return 0 unless $error;
-    # Connection-related error patterns
-    return 1 if $error =~ /connection refused/i;
-    return 1 if $error =~ /connection reset/i;
-    return 1 if $error =~ /could not connect/i;
-    return 1 if $error =~ /server closed the connection/i;
-    return 1 if $error =~ /no connection to the server/i;
-    return 1 if $error =~ /terminating connection/i;
-    return 1 if $error =~ /connection timed out/i;
-    return 1 if $error =~ /lost connection/i;
-    # Read-only errors indicate we're connected to a replica instead of leader
-    return 1 if $error =~ /read-only transaction/i;
-    return 1 if $error =~ /cannot execute .* in a read-only transaction/i;
+
+    # # Connection-related error patterns
+    # connection refused
+    # connection reset
+    # could not connect
+    # server closed the connection
+    # no connection to the server
+    # terminating connection
+    # connection timed out
+    # lost connection
+
+    # # Read-only errors indicate we're connected to a replica instead of leader
+    #  read-only transaction
+    #  cannot execute .* in a read-only transaction
+
+    # # PostgreSQL recovery/startup errors (node not ready after failover)
+    # the database system is starting up
+    # the database system is in recovery mode
+    # the database system is shutting down/
+    # recovery is in progress
+    # not accepting connections
+    # hot standby mode is disabled
+    return 1
+      if $error =~
+/(?:c(?:o(?:nnection (?:re(?:fused|set)|timed out)|uld not connect)|annot execute .* in a read-only transaction)|t(?:he database system is (?:s(?:hutting down|tarting up)|in recovery mode)|erminating connection)|no(?: connection to the server|t accepting connections)|re(?:covery is in progress|ad-only transaction)|(?:server closed the|lost) connection|hot standby mode is disabled)/;
+
     return 0;
 }
 
@@ -282,15 +300,14 @@ sub _rediscover_cluster {
 
     # Close old connections
     eval { $self->{leader_dbh}->disconnect } if $self->{leader_dbh};
-    if ($self->{replica_dbh} && $self->{replica_dbh} ne $self->{leader_dbh}) {
+    if ( $self->{replica_dbh} && $self->{replica_dbh} ne $self->{leader_dbh} ) {
         eval { $self->{replica_dbh}->disconnect };
     }
 
     # Rediscover cluster
-    my ($leader, @replicas) = DBD::Patroni::_discover_cluster(
-        $config->{patroni_url},
-        $config->{patroni_timeout}
-    );
+    my ( $leader, @replicas ) =
+      DBD::Patroni::_discover_cluster( $config->{patroni_url},
+        $config->{patroni_timeout} );
 
     # Rebuild leader DSN
     my $leader_dsn = $config->{dsn};
@@ -298,28 +315,24 @@ sub _rediscover_cluster {
     $leader_dsn .= ";host=$leader->{host};port=$leader->{port}";
 
     # Reconnect to leader
-    $self->{leader_dbh} = DBI->connect(
-        "dbi:Pg:$leader_dsn",
-        $config->{user},
-        $config->{pass},
-        { %{$config->{attr}}, RaiseError => 1 }
-    ) or die "DBD::Patroni: Cannot reconnect to leader: $DBI::errstr\n";
+    $self->{leader_dbh} =
+      DBI->connect( "dbi:Pg:$leader_dsn", $config->{user}, $config->{pass},
+        { %{ $config->{attr} }, RaiseError => 1 } )
+      or die "DBD::Patroni: Cannot reconnect to leader: $DBI::errstr\n";
 
     # Reconnect to replica
-    if (@replicas && $config->{patroni_lb} ne 'leader_only') {
-        my $replica = DBD::Patroni::_select_replica(\@replicas, $config->{patroni_lb});
+    if ( @replicas && $config->{patroni_lb} ne 'leader_only' ) {
+        my $replica =
+          DBD::Patroni::_select_replica( \@replicas, $config->{patroni_lb} );
         if ($replica) {
             my $replica_dsn = $config->{dsn};
             $replica_dsn =~ s/(?:host|port)=[^;]*;?//gi;
             $replica_dsn .= ";host=$replica->{host};port=$replica->{port}";
 
             $self->{replica_dbh} = eval {
-                DBI->connect(
-                    "dbi:Pg:$replica_dsn",
-                    $config->{user},
+                DBI->connect( "dbi:Pg:$replica_dsn", $config->{user},
                     $config->{pass},
-                    { %{$config->{attr}}, RaiseError => 1 }
-                );
+                    { %{ $config->{attr} }, RaiseError => 1 } );
             };
         }
     }
@@ -327,15 +340,15 @@ sub _rediscover_cluster {
 }
 
 sub prepare {
-    my ($self, $statement, @attribs) = @_;
+    my ( $self, $statement, @attribs ) = @_;
 
     return undef unless defined $statement;
 
     my $is_readonly = DBD::Patroni::_is_readonly($statement);
-    my $target      = $is_readonly ? 'replica' : 'leader';
+    my $target      = $is_readonly ? 'replica'            : 'leader';
     my $target_dbh  = $is_readonly ? $self->{replica_dbh} : $self->{leader_dbh};
 
-    my $real_sth = $target_dbh->prepare($statement, @attribs);
+    my $real_sth = $target_dbh->prepare( $statement, @attribs );
     return undef unless $real_sth;
 
     return DBD::Patroni::st->new(
@@ -347,7 +360,7 @@ sub prepare {
 }
 
 sub do {
-    my ($self, $statement, $attr, @bind) = @_;
+    my ( $self, $statement, $attr, @bind ) = @_;
     my $is_readonly = DBD::Patroni::_is_readonly($statement);
     my $target      = $is_readonly ? 'replica' : 'leader';
 
@@ -355,16 +368,19 @@ sub do {
         $self->_with_retry(
             $target,
             sub {
-                my $handle = $is_readonly ? $self->{replica_dbh} : $self->{leader_dbh};
-                return $handle->do($statement, $attr, @bind);
+                my $handle =
+                  $is_readonly ? $self->{replica_dbh} : $self->{leader_dbh};
+                return $handle->do( $statement, $attr, @bind );
             }
         );
     };
 
     if ($@) {
         my $error = $@;
+
         # Store error for errstr
         $self->{_last_error} = $error;
+
         # Check if user wants exceptions
         my $raise_error = $self->{config}{attr}{RaiseError} // 1;
         if ($raise_error) {
@@ -383,7 +399,7 @@ sub ping {
 sub disconnect {
     my $self = shift;
     $self->{leader_dbh}->disconnect if $self->{leader_dbh};
-    if ($self->{replica_dbh} && $self->{replica_dbh} ne $self->{leader_dbh}) {
+    if ( $self->{replica_dbh} && $self->{replica_dbh} ne $self->{leader_dbh} ) {
         $self->{replica_dbh}->disconnect;
     }
     return 1;
@@ -395,15 +411,15 @@ sub commit     { shift->{leader_dbh}->commit }
 sub rollback   { shift->{leader_dbh}->rollback }
 
 # Delegate common methods to leader
-sub quote            { shift->{leader_dbh}->quote(@_) }
-sub quote_identifier { shift->{leader_dbh}->quote_identifier(@_) }
-sub last_insert_id   { shift->{leader_dbh}->last_insert_id(@_) }
-sub table_info       { shift->{leader_dbh}->table_info(@_) }
-sub column_info      { shift->{leader_dbh}->column_info(@_) }
-sub primary_key_info { shift->{leader_dbh}->primary_key_info(@_) }
-sub foreign_key_info { shift->{leader_dbh}->foreign_key_info(@_) }
-sub tables           { shift->{leader_dbh}->tables(@_) }
-sub selectrow_array  { shift->{leader_dbh}->selectrow_array(@_) }
+sub quote              { shift->{leader_dbh}->quote(@_) }
+sub quote_identifier   { shift->{leader_dbh}->quote_identifier(@_) }
+sub last_insert_id     { shift->{leader_dbh}->last_insert_id(@_) }
+sub table_info         { shift->{leader_dbh}->table_info(@_) }
+sub column_info        { shift->{leader_dbh}->column_info(@_) }
+sub primary_key_info   { shift->{leader_dbh}->primary_key_info(@_) }
+sub foreign_key_info   { shift->{leader_dbh}->foreign_key_info(@_) }
+sub tables             { shift->{leader_dbh}->tables(@_) }
+sub selectrow_array    { shift->{leader_dbh}->selectrow_array(@_) }
 sub selectrow_arrayref { shift->{leader_dbh}->selectrow_arrayref(@_) }
 sub selectrow_hashref  { shift->{leader_dbh}->selectrow_hashref(@_) }
 sub selectall_arrayref { shift->{leader_dbh}->selectall_arrayref(@_) }
@@ -414,8 +430,8 @@ sub errstr {
     my $self = shift;
     return $self->{_last_error} || $self->{leader_dbh}->errstr;
 }
-sub err    { shift->{leader_dbh}->err }
-sub state  { shift->{leader_dbh}->state }
+sub err   { shift->{leader_dbh}->err }
+sub state { shift->{leader_dbh}->state }
 
 # Attribute accessors
 sub AUTOLOAD {
@@ -427,7 +443,7 @@ sub AUTOLOAD {
     return if $method eq 'DESTROY';
 
     # Delegate to leader handle
-    if ($self->{leader_dbh}->can($method)) {
+    if ( $self->{leader_dbh}->can($method) ) {
         return $self->{leader_dbh}->$method(@_);
     }
 
@@ -448,7 +464,7 @@ use strict;
 use warnings;
 
 sub new {
-    my ($class, %args) = @_;
+    my ( $class, %args ) = @_;
     return bless {
         real_sth  => $args{real_sth},
         target    => $args{target},
@@ -458,7 +474,7 @@ sub new {
 }
 
 sub execute {
-    my ($self, @bind) = @_;
+    my ( $self, @bind ) = @_;
     my $db     = $self->{db};
     my $target = $self->{target};
 
@@ -467,12 +483,16 @@ sub execute {
         sub {
             # Check if statement handle is still valid
             my $real_sth = $self->{real_sth};
-            unless ($real_sth && $real_sth->{Database} && $real_sth->{Database}{Active}) {
+            unless ( $real_sth
+                && $real_sth->{Database}
+                && $real_sth->{Database}{Active} )
+            {
                 # Re-prepare statement after reconnection
-                my $handle = $target eq 'replica'
-                    ? $db->{replica_dbh}
-                    : $db->{leader_dbh};
-                $self->{real_sth} = $handle->prepare($self->{statement});
+                my $handle =
+                    $target eq 'replica'
+                  ? $db->{replica_dbh}
+                  : $db->{leader_dbh};
+                $self->{real_sth} = $handle->prepare( $self->{statement} );
                 $real_sth = $self->{real_sth};
             }
             return $real_sth->execute(@bind);
@@ -481,18 +501,18 @@ sub execute {
 }
 
 # Delegate fetch methods
-sub fetch              { shift->{real_sth}->fetch }
-sub fetchrow_array     { shift->{real_sth}->fetchrow_array }
-sub fetchrow_arrayref  { shift->{real_sth}->fetchrow_arrayref }
-sub fetchrow_hashref   { shift->{real_sth}->fetchrow_hashref(@_) }
-sub fetchall_arrayref  { shift->{real_sth}->fetchall_arrayref(@_) }
-sub fetchall_hashref   { shift->{real_sth}->fetchall_hashref(@_) }
-sub finish             { shift->{real_sth}->finish }
-sub rows               { shift->{real_sth}->rows }
-sub bind_param         { shift->{real_sth}->bind_param(@_) }
-sub bind_param_inout   { shift->{real_sth}->bind_param_inout(@_) }
-sub bind_col           { shift->{real_sth}->bind_col(@_) }
-sub bind_columns       { shift->{real_sth}->bind_columns(@_) }
+sub fetch             { shift->{real_sth}->fetch }
+sub fetchrow_array    { shift->{real_sth}->fetchrow_array }
+sub fetchrow_arrayref { shift->{real_sth}->fetchrow_arrayref }
+sub fetchrow_hashref  { shift->{real_sth}->fetchrow_hashref(@_) }
+sub fetchall_arrayref { shift->{real_sth}->fetchall_arrayref(@_) }
+sub fetchall_hashref  { shift->{real_sth}->fetchall_hashref(@_) }
+sub finish            { shift->{real_sth}->finish }
+sub rows              { shift->{real_sth}->rows }
+sub bind_param        { shift->{real_sth}->bind_param(@_) }
+sub bind_param_inout  { shift->{real_sth}->bind_param_inout(@_) }
+sub bind_col          { shift->{real_sth}->bind_col(@_) }
+sub bind_columns      { shift->{real_sth}->bind_columns(@_) }
 
 sub errstr { shift->{real_sth}->errstr }
 sub err    { shift->{real_sth}->err }
@@ -508,7 +528,7 @@ sub AUTOLOAD {
     return if $method eq 'DESTROY';
 
     # Delegate to real statement handle
-    if ($self->{real_sth}->can($method)) {
+    if ( $self->{real_sth}->can($method) ) {
         return $self->{real_sth}->$method(@_);
     }
 

@@ -66,6 +66,14 @@ is(DBD::Patroni::db::_is_connection_error('cannot execute UPDATE in a read-only 
 is(DBD::Patroni::db::_is_connection_error('cannot execute DELETE in a read-only transaction'), 1, 'read-only DELETE is connection error');
 is(DBD::Patroni::db::_is_connection_error('ERROR: cannot execute TRUNCATE in a read-only transaction'), 1, 'read-only TRUNCATE is connection error');
 
+# PostgreSQL recovery/startup errors (node not ready after failover)
+is(DBD::Patroni::db::_is_connection_error('FATAL: the database system is starting up'), 1, 'database starting up is connection error');
+is(DBD::Patroni::db::_is_connection_error('FATAL: the database system is in recovery mode'), 1, 'database in recovery mode is connection error');
+is(DBD::Patroni::db::_is_connection_error('FATAL: the database system is shutting down'), 1, 'database shutting down is connection error');
+is(DBD::Patroni::db::_is_connection_error('recovery is in progress'), 1, 'recovery in progress is connection error');
+is(DBD::Patroni::db::_is_connection_error('FATAL: the database system is not accepting connections'), 1, 'not accepting connections is connection error');
+is(DBD::Patroni::db::_is_connection_error('FATAL: hot standby mode is disabled'), 1, 'hot standby disabled is connection error');
+
 # SQL errors that should NOT trigger rediscovery
 is(DBD::Patroni::db::_is_connection_error('syntax error at or near "SELEC"'), 0, 'syntax error is not connection error');
 is(DBD::Patroni::db::_is_connection_error('relation "nonexistent" does not exist'), 0, 'missing relation is not connection error');
