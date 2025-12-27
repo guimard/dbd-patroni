@@ -6,6 +6,34 @@ use Test::More;
 # Test module loading
 use_ok('DBD::Patroni');
 
+# Test _parse_dsn function
+my ( $clean_dsn, $params );
+
+( $clean_dsn, $params ) =
+  DBD::Patroni::_parse_dsn('dbname=test;patroni_url=http://host:8008/cluster');
+is( $clean_dsn,                'dbname=test', 'DSN without patroni params' );
+is( $params->{patroni_url},    'http://host:8008/cluster', 'patroni_url extracted' );
+
+( $clean_dsn, $params ) = DBD::Patroni::_parse_dsn(
+    'dbname=test;patroni_url=http://host:8008/cluster;patroni_lb=random');
+is( $clean_dsn,             'dbname=test',              'DSN with multiple patroni params' );
+is( $params->{patroni_url}, 'http://host:8008/cluster', 'patroni_url extracted (multi)' );
+is( $params->{patroni_lb},  'random',                   'patroni_lb extracted' );
+
+( $clean_dsn, $params ) = DBD::Patroni::_parse_dsn(
+    'dbname=test;host=localhost;patroni_timeout=5;port=5432');
+is( $clean_dsn, 'dbname=test;host=localhost;port=5432', 'DSN preserves non-patroni params' );
+is( $params->{patroni_timeout}, '5', 'patroni_timeout extracted from middle' );
+
+( $clean_dsn, $params ) = DBD::Patroni::_parse_dsn('dbname=test;host=localhost');
+is( $clean_dsn,              'dbname=test;host=localhost', 'DSN unchanged without patroni params' );
+is( scalar keys %$params,    0,                            'No patroni params extracted' );
+
+( $clean_dsn, $params ) = DBD::Patroni::_parse_dsn(
+    'patroni_url=http://a:8008/cluster,http://b:8008/cluster;dbname=test');
+is( $clean_dsn,             'dbname=test',                             'DSN with comma-separated URLs' );
+is( $params->{patroni_url}, 'http://a:8008/cluster,http://b:8008/cluster', 'comma-separated URLs preserved' );
+
 # Test _is_readonly function
 is( DBD::Patroni::_is_readonly('SELECT * FROM users'), 1,
     'SELECT is readonly' );

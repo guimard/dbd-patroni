@@ -67,6 +67,24 @@ sub _select_replica {
     }
 }
 
+# Parse and extract Patroni parameters from DSN
+sub _parse_dsn {
+    my ($dsn) = @_;
+    my %params;
+    my @remaining;
+
+    for my $part ( split /;/, $dsn ) {
+        if ( $part =~ /^(patroni_url|patroni_lb|patroni_timeout)=(.*)$/i ) {
+            $params{ lc($1) } = $2;
+        }
+        else {
+            push @remaining, $part;
+        }
+    }
+
+    return ( join( ';', @remaining ), \%params );
+}
+
 # Detect read-only queries
 sub _is_readonly {
     my $sql = shift;
@@ -82,10 +100,16 @@ sub connect {
 
     $attr //= {};
 
-    # Extract Patroni-specific attributes
-    my $patroni_url     = delete $attr->{patroni_url};
-    my $patroni_lb      = delete $attr->{patroni_lb}      // 'round_robin';
-    my $patroni_timeout = delete $attr->{patroni_timeout} // 3;
+    # Parse DSN for Patroni parameters
+    my ( $clean_dsn, $dsn_params ) = _parse_dsn($dsn);
+    $dsn = $clean_dsn;
+
+    # Extract Patroni-specific attributes (attr takes precedence over DSN)
+    my $patroni_url = delete $attr->{patroni_url} // $dsn_params->{patroni_url};
+    my $patroni_lb  = delete $attr->{patroni_lb}  // $dsn_params->{patroni_lb}
+      // 'round_robin';
+    my $patroni_timeout = delete $attr->{patroni_timeout}
+      // $dsn_params->{patroni_timeout} // 3;
 
     die "DBD::Patroni: patroni_url attribute is required\n"
       unless $patroni_url;
@@ -146,10 +170,16 @@ sub connect_cached {
 
     $attr //= {};
 
-    # Extract Patroni-specific attributes
-    my $patroni_url     = delete $attr->{patroni_url};
-    my $patroni_lb      = delete $attr->{patroni_lb}      // 'round_robin';
-    my $patroni_timeout = delete $attr->{patroni_timeout} // 3;
+    # Parse DSN for Patroni parameters
+    my ( $clean_dsn, $dsn_params ) = _parse_dsn($dsn);
+    $dsn = $clean_dsn;
+
+    # Extract Patroni-specific attributes (attr takes precedence over DSN)
+    my $patroni_url = delete $attr->{patroni_url} // $dsn_params->{patroni_url};
+    my $patroni_lb  = delete $attr->{patroni_lb}  // $dsn_params->{patroni_lb}
+      // 'round_robin';
+    my $patroni_timeout = delete $attr->{patroni_timeout}
+      // $dsn_params->{patroni_timeout} // 3;
 
     die "DBD::Patroni: patroni_url attribute is required\n"
       unless $patroni_url;
@@ -552,6 +582,7 @@ DBD::Patroni - DBI driver for PostgreSQL with Patroni cluster support
 
     use DBD::Patroni;
 
+    # Option 1: Patroni parameters in attributes hash
     my $dbh = DBD::Patroni->connect(
         "dbname=mydb",
         $user, $password,
@@ -559,6 +590,12 @@ DBD::Patroni - DBI driver for PostgreSQL with Patroni cluster support
             patroni_url => "http://patroni1:8008/cluster,http://patroni2:8008/cluster",
             patroni_lb  => "round_robin",  # round_robin | random | leader_only
         }
+    );
+
+    # Option 2: Patroni parameters in DSN string
+    my $dbh = DBD::Patroni->connect(
+        "dbname=mydb;patroni_url=http://patroni1:8008/cluster;patroni_lb=round_robin",
+        $user, $password
     );
 
     # SELECT queries go to replica
@@ -602,7 +639,18 @@ The DSN should be a PostgreSQL DSN without the C<dbi:Pg:> prefix. All
 standard L<DBD::Pg> connection parameters are supported (host, port,
 dbname, sslmode, etc.). See L<DBD::Pg> for a complete list of options.
 
-Example with SSL disabled (useful for testing):
+Patroni-specific parameters (C<patroni_url>, C<patroni_lb>, C<patroni_timeout>)
+can be passed either in the DSN string or in the attributes hash. If specified
+in both places, the attributes hash takes precedence.
+
+Example with Patroni parameters in DSN:
+
+    my $dbh = DBD::Patroni->connect(
+        "dbname=mydb;sslmode=disable;patroni_url=http://patroni:8008/cluster",
+        $user, $password
+    );
+
+Example with Patroni parameters in attributes:
 
     my $dbh = DBD::Patroni->connect(
         "dbname=mydb;sslmode=disable",
@@ -612,11 +660,15 @@ Example with SSL disabled (useful for testing):
 
 =head1 CONNECTION ATTRIBUTES
 
+These attributes can be specified either in the DSN string or in the
+attributes hash. If specified in both places, the attributes hash takes
+precedence.
+
 =over 4
 
 =item patroni_url (required)
 
-Comma or space-separated list of Patroni REST API endpoints.
+Comma-separated list of Patroni REST API endpoints.
 
 =item patroni_lb
 
