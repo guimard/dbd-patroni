@@ -76,36 +76,15 @@ jobs:
         run: |
           docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list
 
-      - name: Setup Perl
-        uses: shogo82148/actions-setup-perl@v1
-        with:
-          perl-version: '5.38'
-
-      - name: Install Perl dependencies
+      - name: Run integration tests in container
+        working-directory: docker
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libpq-dev
-          cpanm --notest DBI DBD::Pg LWP::UserAgent JSON Test::More
-
-      - name: Run integration tests
-        env:
-          PATRONI_URLS: http://localhost:8008/cluster,http://localhost:8018/cluster,http://localhost:8028/cluster
-          PGUSER: testuser
-          PGPASSWORD: testpass
-          PGDATABASE: testdb
-        run: |
-          # Map ports from containers
-          docker compose -f docker/docker-compose.yml port patroni1 8008 || true
-
-          # Update PATRONI_URLS with actual container IPs
-          PATRONI1_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker-patroni1-1 2>/dev/null || docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker_patroni1_1)
-          PATRONI2_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker-patroni2-1 2>/dev/null || docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker_patroni2_1)
-          PATRONI3_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker-patroni3-1 2>/dev/null || docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker_patroni3_1)
-
-          export PATRONI_URLS="http://${PATRONI1_IP}:8008/cluster,http://${PATRONI2_IP}:8008/cluster,http://${PATRONI3_IP}:8008/cluster"
-          echo "PATRONI_URLS=$PATRONI_URLS"
-
-          prove -v -Ilib t/02-integration.t
+          # Run tests inside a container on the same Docker network
+          docker compose run --rm -T test-runner bash -c "
+            apt-get update && apt-get install -y libpq-dev curl jq >/dev/null 2>&1 &&
+            cpanm --notest DBI DBD::Pg LWP::UserAgent JSON Test::More >/dev/null 2>&1 &&
+            cd /app && prove -v -Ilib t/02-integration.t
+          "
 
       - name: Cleanup
         if: always()
@@ -156,32 +135,15 @@ jobs:
             sleep 3
           done
 
-      - name: Setup Perl
-        uses: shogo82148/actions-setup-perl@v1
-        with:
-          perl-version: '5.38'
-
-      - name: Install Perl dependencies
+      - name: Run failover tests in container
+        working-directory: docker
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libpq-dev
-          cpanm --notest DBI DBD::Pg LWP::UserAgent JSON Test::More
-
-      - name: Run failover tests
-        env:
-          PGUSER: testuser
-          PGPASSWORD: testpass
-          PGDATABASE: testdb
-          TEST_FAILOVER: 1
-        run: |
-          PATRONI1_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker-patroni1-1 2>/dev/null || docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker_patroni1_1)
-          PATRONI2_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker-patroni2-1 2>/dev/null || docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker_patroni2_1)
-          PATRONI3_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker-patroni3-1 2>/dev/null || docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker_patroni3_1)
-
-          export PATRONI_URLS="http://${PATRONI1_IP}:8008/cluster,http://${PATRONI2_IP}:8008/cluster,http://${PATRONI3_IP}:8008/cluster"
-          echo "PATRONI_URLS=$PATRONI_URLS"
-
-          prove -v -Ilib t/03-failover.t
+          # Run failover tests inside a container on the same Docker network
+          docker compose run --rm -T -e TEST_FAILOVER=1 test-runner bash -c "
+            apt-get update && apt-get install -y libpq-dev curl jq >/dev/null 2>&1 &&
+            cpanm --notest DBI DBD::Pg LWP::UserAgent JSON Test::More >/dev/null 2>&1 &&
+            cd /app && prove -v -Ilib t/03-failover.t
+          "
 
       - name: Show cluster state after tests
         if: always()

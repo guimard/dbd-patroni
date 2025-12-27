@@ -98,7 +98,7 @@ services:
     hostname: test-runner
     working_dir: /app
     volumes:
-      - ..:/app:ro
+      - ..:/app
       - ./wait-for-cluster.sh:/wait-for-cluster.sh:ro
     environment:
       - PATRONI_URLS=http://patroni1:8008/cluster,http://patroni2:8008/cluster,http://patroni3:8008/cluster
