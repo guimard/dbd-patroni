@@ -291,7 +291,65 @@ subtest 'Cached connection survives failover' => sub {
     is($result, $name2, 'Read via cached connection works after failover');
 };
 
-# Test 5: Verify cluster state (informational - cluster may still be recovering)
+# Test 5: Recovery from read-only error (simulates connecting to replica as leader)
+subtest 'Recovery from read-only error' => sub {
+    # Get cluster info to find a replica
+    my $info = get_cluster_info();
+    skip "Need replicas for read-only test", 3 unless $info && @{$info->{replicas}};
+
+    my $replica = $info->{replicas}[0];
+    diag("Testing read-only recovery using replica: $replica->{host}");
+
+    # Create a DBD::Patroni connection normally
+    my $dbh = DBD::Patroni->connect(
+        $dsn,
+        $user, $pass,
+        { patroni_url => $patroni_urls }
+    );
+
+    ok($dbh, 'Got initial connection');
+
+    # Manually replace the leader connection with a replica connection
+    # This simulates what happens when the leader becomes a replica after failover
+    my $replica_dsn = "dbi:Pg:dbname=$dbname;host=$replica->{host};port=$replica->{port};sslmode=$sslmode";
+    my $replica_dbh = DBI->connect($replica_dsn, $user, $pass, { RaiseError => 0 });
+    skip "Cannot connect to replica directly", 2 unless $replica_dbh;
+
+    # Save the real leader and replace with replica
+    my $real_leader = $dbh->{leader_dbh};
+    $dbh->{leader_dbh} = $replica_dbh;
+
+    diag("Replaced leader connection with replica connection");
+
+    # Try to write - this should fail with read-only error and trigger recovery
+    my $rv = eval {
+        $dbh->do("INSERT INTO logs (message) VALUES (?)", undef, "read-only test");
+    };
+
+    if (!$rv && $@) {
+        diag("First write attempt error (expected): $@");
+        # The connection should have been rediscovered, try again
+        $rv = eval {
+            $dbh->do("INSERT INTO logs (message) VALUES (?)", undef, "read-only test recovered");
+        };
+    }
+
+    ok($rv, 'Write succeeded after read-only recovery');
+
+    # Verify the data was written
+    my $sth = $dbh->prepare("SELECT message FROM logs WHERE message LIKE 'read-only test%' ORDER BY id DESC LIMIT 1");
+    $sth->execute;
+    my ($msg) = $sth->fetchrow_array;
+    $sth->finish;
+
+    like($msg, qr/read-only test/, 'Data was written after recovery');
+
+    # Cleanup
+    $replica_dbh->disconnect if $replica_dbh;
+    $dbh->disconnect;
+};
+
+# Test 6: Verify cluster state (informational - cluster may still be recovering)
 subtest 'Verify cluster state after tests' => sub {
     my $info = get_cluster_info();
 

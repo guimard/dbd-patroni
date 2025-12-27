@@ -49,4 +49,29 @@ is($rr2->{host}, 'replica2', 'round_robin second call returns replica2');
 is($rr3->{host}, 'replica3', 'round_robin third call returns replica3');
 is($rr4->{host}, 'replica1', 'round_robin fourth call wraps to replica1');
 
+# Test _is_connection_error function
+# Connection errors that should trigger rediscovery
+is(DBD::Patroni::db::_is_connection_error('connection refused'), 1, 'connection refused is connection error');
+is(DBD::Patroni::db::_is_connection_error('connection reset by peer'), 1, 'connection reset is connection error');
+is(DBD::Patroni::db::_is_connection_error('could not connect to server'), 1, 'could not connect is connection error');
+is(DBD::Patroni::db::_is_connection_error('server closed the connection unexpectedly'), 1, 'server closed is connection error');
+is(DBD::Patroni::db::_is_connection_error('no connection to the server'), 1, 'no connection is connection error');
+is(DBD::Patroni::db::_is_connection_error('terminating connection due to administrator command'), 1, 'terminating connection is connection error');
+is(DBD::Patroni::db::_is_connection_error('connection timed out'), 1, 'connection timed out is connection error');
+is(DBD::Patroni::db::_is_connection_error('lost connection to server'), 1, 'lost connection is connection error');
+
+# Read-only errors (leader became replica after failover)
+is(DBD::Patroni::db::_is_connection_error('cannot execute INSERT in a read-only transaction'), 1, 'read-only INSERT is connection error');
+is(DBD::Patroni::db::_is_connection_error('cannot execute UPDATE in a read-only transaction'), 1, 'read-only UPDATE is connection error');
+is(DBD::Patroni::db::_is_connection_error('cannot execute DELETE in a read-only transaction'), 1, 'read-only DELETE is connection error');
+is(DBD::Patroni::db::_is_connection_error('ERROR: cannot execute TRUNCATE in a read-only transaction'), 1, 'read-only TRUNCATE is connection error');
+
+# SQL errors that should NOT trigger rediscovery
+is(DBD::Patroni::db::_is_connection_error('syntax error at or near "SELEC"'), 0, 'syntax error is not connection error');
+is(DBD::Patroni::db::_is_connection_error('relation "nonexistent" does not exist'), 0, 'missing relation is not connection error');
+is(DBD::Patroni::db::_is_connection_error('permission denied for table users'), 0, 'permission denied is not connection error');
+is(DBD::Patroni::db::_is_connection_error('duplicate key value violates unique constraint'), 0, 'unique violation is not connection error');
+is(DBD::Patroni::db::_is_connection_error(undef), 0, 'undef is not connection error');
+is(DBD::Patroni::db::_is_connection_error(''), 0, 'empty string is not connection error');
+
 done_testing();

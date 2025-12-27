@@ -270,6 +270,9 @@ sub _is_connection_error {
     return 1 if $error =~ /terminating connection/i;
     return 1 if $error =~ /connection timed out/i;
     return 1 if $error =~ /lost connection/i;
+    # Read-only errors indicate we're connected to a replica instead of leader
+    return 1 if $error =~ /read-only transaction/i;
+    return 1 if $error =~ /cannot execute .* in a read-only transaction/i;
     return 0;
 }
 
