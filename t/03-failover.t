@@ -212,10 +212,9 @@ subtest 'Cached connection survives failover' => sub {
     diag("Waiting for cluster to stabilize before cached connection test...");
     wait_for_replicas(30);
 
-    # Get a cached connection
-    my $full_dsn = "dbi:Patroni:$dsn";
-    my $dbh1 = DBI->connect_cached(
-        $full_dsn,
+    # Get a cached connection using DBD::Patroni->connect_cached
+    my $dbh1 = DBD::Patroni->connect_cached(
+        $dsn,
         $user, $pass,
         { patroni_url => $patroni_urls, RaiseError => 1 }
     );
@@ -258,9 +257,9 @@ subtest 'Cached connection survives failover' => sub {
     diag("New leader after cached failover: $current_leader");
     isnt($current_leader, $old_leader, 'Leader has changed (cached test)');
 
-    # Get another cached connection - should return the same handle
-    my $dbh2 = DBI->connect_cached(
-        $full_dsn,
+    # Get another cached connection - should return the same handle or reconnect
+    my $dbh2 = DBD::Patroni->connect_cached(
+        $dsn,
         $user, $pass,
         { patroni_url => $patroni_urls, RaiseError => 1 }
     );

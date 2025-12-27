@@ -142,6 +142,74 @@ sub connect {
     );
 }
 
+# Cached connect function - uses DBI->connect_cached for underlying connections
+sub connect_cached {
+    my ($class, $dsn, $user, $pass, $attr) = @_;
+
+    $attr //= {};
+
+    # Extract Patroni-specific attributes
+    my $patroni_url     = delete $attr->{patroni_url};
+    my $patroni_lb      = delete $attr->{patroni_lb} // 'round_robin';
+    my $patroni_timeout = delete $attr->{patroni_timeout} // 3;
+
+    die "DBD::Patroni: patroni_url attribute is required\n"
+        unless $patroni_url;
+
+    # Discover cluster
+    my ($leader, @replicas) = _discover_cluster($patroni_url, $patroni_timeout);
+
+    # Build leader DSN
+    my $leader_dsn = $dsn;
+    $leader_dsn =~ s/(?:host|port)=[^;]*;?//gi;
+    $leader_dsn .= ";host=$leader->{host};port=$leader->{port}";
+
+    # Connect to leader using DBI's cached connection mechanism
+    my $leader_dbh = DBI->connect_cached(
+        "dbi:Pg:$leader_dsn",
+        $user, $pass,
+        { %$attr, RaiseError => 1, private_patroni_role => 'leader' }
+    ) or die "DBD::Patroni: Cannot connect to leader: $DBI::errstr\n";
+
+    # Connect to replica (if available and not leader_only mode)
+    my $replica_dbh;
+    if (@replicas && $patroni_lb ne 'leader_only') {
+        my $replica = _select_replica(\@replicas, $patroni_lb);
+        if ($replica) {
+            my $replica_dsn = $dsn;
+            $replica_dsn =~ s/(?:host|port)=[^;]*;?//gi;
+            $replica_dsn .= ";host=$replica->{host};port=$replica->{port}";
+
+            $replica_dbh = eval {
+                DBI->connect_cached(
+                    "dbi:Pg:$replica_dsn",
+                    $user, $pass,
+                    { %$attr, RaiseError => 1, private_patroni_role => 'replica' }
+                );
+            };
+            warn "DBD::Patroni: Cannot connect to replica, using leader: $@\n"
+                if $@ && !$replica_dbh;
+        }
+    }
+    $replica_dbh //= $leader_dbh;
+
+    # Create and return the wrapper object
+    return DBD::Patroni::db->new(
+        leader_dbh  => $leader_dbh,
+        replica_dbh => $replica_dbh,
+        config      => {
+            dsn             => $dsn,
+            user            => $user,
+            pass            => $pass,
+            attr            => $attr,
+            patroni_url     => $patroni_url,
+            patroni_lb      => $patroni_lb,
+            patroni_timeout => $patroni_timeout,
+            use_cached      => 1,
+        },
+    );
+}
+
 1;
 
 # Database handle wrapper
