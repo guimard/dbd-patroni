@@ -30,6 +30,7 @@ services:
       - PGPASSWORD_SUPERUSER=postgres
       - PGPASSWORD_ADMIN=admin
       - PGPASSWORD_STANDBY=standby
+      - ALLOW_NOSSL=true
       - POST_INIT=/scripts/init-db.sh
     volumes:
       - patroni1_data:/home/postgres/pgdata
@@ -54,6 +55,7 @@ services:
       - PGPASSWORD_SUPERUSER=postgres
       - PGPASSWORD_ADMIN=admin
       - PGPASSWORD_STANDBY=standby
+      - ALLOW_NOSSL=true
       - POST_INIT=/scripts/init-db.sh
     volumes:
       - patroni2_data:/home/postgres/pgdata
@@ -78,6 +80,7 @@ services:
       - PGPASSWORD_SUPERUSER=postgres
       - PGPASSWORD_ADMIN=admin
       - PGPASSWORD_STANDBY=standby
+      - ALLOW_NOSSL=true
       - POST_INIT=/scripts/init-db.sh
     volumes:
       - patroni3_data:/home/postgres/pgdata

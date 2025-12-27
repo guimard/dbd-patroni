@@ -472,7 +472,17 @@ Unlike standard DBI drivers, DBD::Patroni uses a direct connect method:
 
     my $dbh = DBD::Patroni->connect($dsn, $user, $pass, \%attr);
 
-The DSN should be a PostgreSQL DSN without the C<dbi:Pg:> prefix.
+The DSN should be a PostgreSQL DSN without the C<dbi:Pg:> prefix. All
+standard L<DBD::Pg> connection parameters are supported (host, port,
+dbname, sslmode, etc.). See L<DBD::Pg> for a complete list of options.
+
+Example with SSL disabled (useful for testing):
+
+    my $dbh = DBD::Patroni->connect(
+        "dbname=mydb;sslmode=disable",
+        $user, $password,
+        { patroni_url => "http://patroni:8008/cluster" }
+    );
 
 =head1 CONNECTION ATTRIBUTES
 
@@ -529,6 +539,12 @@ On connection failure, DBD::Patroni will:
 =back
 
 If the retry also fails, the error is propagated to the caller.
+
+=head1 SEE ALSO
+
+L<DBD::Pg> - The underlying PostgreSQL driver
+
+L<DBI> - Database independent interface for Perl
 
 =head1 AUTHOR
 
