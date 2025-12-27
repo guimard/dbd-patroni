@@ -206,7 +206,93 @@ subtest 'New connection after failover' => sub {
     $dbh->disconnect;
 };
 
-# Test 4: Verify cluster state (informational - cluster may still be recovering)
+# Test 4: Cached connection survives failover
+subtest 'Cached connection survives failover' => sub {
+    # Wait for cluster to stabilize after previous tests
+    diag("Waiting for cluster to stabilize before cached connection test...");
+    wait_for_replicas(30);
+
+    # Get a cached connection
+    my $full_dsn = "dbi:Patroni:$dsn";
+    my $dbh1 = DBI->connect_cached(
+        $full_dsn,
+        $user, $pass,
+        { patroni_url => $patroni_urls, RaiseError => 1 }
+    );
+
+    ok($dbh1, 'Got cached connection');
+
+    # Verify it works
+    my $name1 = "cached_before_" . time();
+    $dbh1->do("INSERT INTO users (name) VALUES (?)", undef, $name1);
+    diag("Inserted: $name1");
+
+    # Get cluster state and trigger failover
+    my $info = get_cluster_info();
+    my $old_leader = $info->{leader}{host};
+    diag("Current leader before cached failover: $old_leader");
+
+    my @replicas = @{$info->{replicas}};
+    skip "Need at least one replica for cached failover test", 4 unless @replicas;
+
+    # Find a replica that is ready (running or streaming)
+    my ($ready_replica) = grep {
+        $_->{state} eq 'running' || $_->{state} eq 'streaming'
+    } @replicas;
+
+    skip "No ready replica for failover", 4 unless $ready_replica;
+
+    my $new_leader = $ready_replica->{name};
+    diag("Triggering failover to: $new_leader");
+
+    my $failover_ok = trigger_failover($new_leader);
+    ok($failover_ok, 'Failover triggered for cached test');
+
+    # Wait for failover
+    diag("Waiting for failover to complete...");
+    sleep 10;
+
+    # Verify leader changed
+    $info = get_cluster_info();
+    my $current_leader = $info->{leader}{host};
+    diag("New leader after cached failover: $current_leader");
+    isnt($current_leader, $old_leader, 'Leader has changed (cached test)');
+
+    # Get another cached connection - should return the same handle
+    my $dbh2 = DBI->connect_cached(
+        $full_dsn,
+        $user, $pass,
+        { patroni_url => $patroni_urls, RaiseError => 1 }
+    );
+
+    ok($dbh2, 'Got second cached connection');
+
+    # Try to use the cached connection - it should auto-recover
+    my $name2 = "cached_after_" . time();
+    my $rv = eval {
+        $dbh2->do("INSERT INTO users (name) VALUES (?)", undef, $name2);
+    };
+
+    if ($@) {
+        diag("First cached attempt failed (expected): $@");
+        # Retry - the reconnect should happen
+        $rv = eval {
+            $dbh2->do("INSERT INTO users (name) VALUES (?)", undef, $name2);
+        };
+    }
+
+    ok($rv, 'Write via cached connection works after failover');
+
+    # Verify data was written
+    my $sth = $dbh2->prepare("SELECT name FROM users WHERE name = ?");
+    $sth->execute($name2);
+    my ($result) = $sth->fetchrow_array;
+    $sth->finish;
+
+    is($result, $name2, 'Read via cached connection works after failover');
+};
+
+# Test 5: Verify cluster state (informational - cluster may still be recovering)
 subtest 'Verify cluster state after tests' => sub {
     my $info = get_cluster_info();
 
