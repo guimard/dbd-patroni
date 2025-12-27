@@ -177,15 +177,32 @@ sub _with_retry {
         };
 
         if ($@) {
-            if ($attempt == 0) {
-                warn "DBD::Patroni: Error on $target, rediscovering cluster...\n";
+            my $error = $@;
+            # Only retry on connection errors, not SQL errors
+            if (_is_connection_error($error) && $attempt == 0) {
+                warn "DBD::Patroni: Connection error on $target, rediscovering cluster...\n";
                 $self->_rediscover_cluster();
                 next;
             }
-            die $@;
+            die $error;
         }
         return $wantarray ? @results : $result;
     }
+}
+
+sub _is_connection_error {
+    my $error = shift;
+    return 0 unless $error;
+    # Connection-related error patterns
+    return 1 if $error =~ /connection refused/i;
+    return 1 if $error =~ /connection reset/i;
+    return 1 if $error =~ /could not connect/i;
+    return 1 if $error =~ /server closed the connection/i;
+    return 1 if $error =~ /no connection to the server/i;
+    return 1 if $error =~ /terminating connection/i;
+    return 1 if $error =~ /connection timed out/i;
+    return 1 if $error =~ /lost connection/i;
+    return 0;
 }
 
 sub _rediscover_cluster {
@@ -263,13 +280,28 @@ sub do {
     my $is_readonly = DBD::Patroni::_is_readonly($statement);
     my $target      = $is_readonly ? 'replica' : 'leader';
 
-    return $self->_with_retry(
-        $target,
-        sub {
-            my $handle = $is_readonly ? $self->{replica_dbh} : $self->{leader_dbh};
-            return $handle->do($statement, $attr, @bind);
+    my $result = eval {
+        $self->_with_retry(
+            $target,
+            sub {
+                my $handle = $is_readonly ? $self->{replica_dbh} : $self->{leader_dbh};
+                return $handle->do($statement, $attr, @bind);
+            }
+        );
+    };
+
+    if ($@) {
+        my $error = $@;
+        # Store error for errstr
+        $self->{_last_error} = $error;
+        # Check if user wants exceptions
+        my $raise_error = $self->{config}{attr}{RaiseError} // 1;
+        if ($raise_error) {
+            die $error;
         }
-    );
+        return undef;
+    }
+    return $result;
 }
 
 sub ping {
@@ -307,7 +339,10 @@ sub selectall_arrayref { shift->{leader_dbh}->selectall_arrayref(@_) }
 sub selectall_hashref  { shift->{leader_dbh}->selectall_hashref(@_) }
 sub selectcol_arrayref { shift->{leader_dbh}->selectcol_arrayref(@_) }
 
-sub errstr { shift->{leader_dbh}->errstr }
+sub errstr {
+    my $self = shift;
+    return $self->{_last_error} || $self->{leader_dbh}->errstr;
+}
 sub err    { shift->{leader_dbh}->err }
 sub state  { shift->{leader_dbh}->state }
 
