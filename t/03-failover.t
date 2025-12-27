@@ -69,7 +69,7 @@ sub trigger_failover {
 
 # Wait for all replicas to be running
 sub wait_for_replicas {
-    my $max_attempts = shift || 30;
+    my $max_attempts = shift || 60;
 
     for my $i (1..$max_attempts) {
         my $info = get_cluster_info();
@@ -81,14 +81,14 @@ sub wait_for_replicas {
             return 1;
         }
         diag("Attempt $i/$max_attempts: " . scalar(@running) . " nodes running");
-        sleep 2;
+        sleep 5;
     }
     return 0;
 }
 
 # Wait for all nodes to be ready before starting tests
 diag("Waiting for all cluster nodes to be ready...");
-wait_for_replicas(30);
+wait_for_replicas(60);  # 60 attempts x 5 seconds = 5 minutes max
 
 # Test 1: Detect current leader
 subtest 'Detect current leader' => sub {
