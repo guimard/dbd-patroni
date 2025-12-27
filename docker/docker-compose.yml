@@ -118,13 +118,6 @@ services:
       "
     networks:
       - patroni-network
-    depends_on:
-      patroni1:
-        condition: service_healthy
-      patroni2:
-        condition: service_healthy
-      patroni3:
-        condition: service_healthy
 
 volumes:
   patroni1_data:
