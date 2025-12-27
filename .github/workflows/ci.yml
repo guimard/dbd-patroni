@@ -123,13 +123,12 @@ jobs:
         run: |
           echo "Waiting for Patroni cluster..."
           for i in {1..60}; do
-            RUNNING=$(docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list 2>/dev/null | grep -c "running" || echo "0")
-            if [ "$RUNNING" -ge 3 ]; then
-              echo "All 3 nodes are running"
+            if docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list 2>/dev/null | grep -q "Leader"; then
+              echo "Cluster is ready"
               docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list
               break
             fi
-            echo "Attempt $i/60... ($RUNNING nodes running)"
+            echo "Attempt $i/60..."
             sleep 5
           done
 
