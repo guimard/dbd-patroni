@@ -32,6 +32,7 @@ services:
       - PGPASSWORD_STANDBY=standby
       - ALLOW_NOSSL=true
       - POST_INIT=/scripts/init-db.sh
+      - 'SPILO_CONFIGURATION={"postgresql":{"pg_hba":["local all all trust","host all all 0.0.0.0/0 md5","host replication standby 0.0.0.0/0 md5"]}}'
     volumes:
       - patroni1_data:/home/postgres/pgdata
       - ./init-db.sh:/scripts/init-db.sh:ro
@@ -57,6 +58,7 @@ services:
       - PGPASSWORD_STANDBY=standby
       - ALLOW_NOSSL=true
       - POST_INIT=/scripts/init-db.sh
+      - 'SPILO_CONFIGURATION={"postgresql":{"pg_hba":["local all all trust","host all all 0.0.0.0/0 md5","host replication standby 0.0.0.0/0 md5"]}}'
     volumes:
       - patroni2_data:/home/postgres/pgdata
       - ./init-db.sh:/scripts/init-db.sh:ro
@@ -82,6 +84,7 @@ services:
       - PGPASSWORD_STANDBY=standby
       - ALLOW_NOSSL=true
       - POST_INIT=/scripts/init-db.sh
+      - 'SPILO_CONFIGURATION={"postgresql":{"pg_hba":["local all all trust","host all all 0.0.0.0/0 md5","host replication standby 0.0.0.0/0 md5"]}}'
     volumes:
       - patroni3_data:/home/postgres/pgdata
       - ./init-db.sh:/scripts/init-db.sh:ro

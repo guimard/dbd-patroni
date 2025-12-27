@@ -77,7 +77,8 @@ is( DBD::Patroni::_select_replica( undef, 'round_robin' ),
     undef, 'undef replicas returns undef' );
 
 # round_robin mode
-$DBD::Patroni::rr_idx = 0;
+# Reset round-robin index for predictable testing
+{ no warnings 'once'; $DBD::Patroni::rr_idx = 0; }
 my $rr1 = DBD::Patroni::_select_replica( \@replicas, 'round_robin' );
 my $rr2 = DBD::Patroni::_select_replica( \@replicas, 'round_robin' );
 my $rr3 = DBD::Patroni::_select_replica( \@replicas, 'round_robin' );
@@ -90,52 +91,52 @@ is( $rr4->{host}, 'replica1', 'round_robin fourth call wraps to replica1' );
 
 # Test _is_connection_error function
 # Connection errors that should trigger rediscovery
-is( DBD::Patroni::db::_is_connection_error('connection refused'),
+is( DBD::Patroni::_is_connection_error('connection refused'),
     1, 'connection refused is connection error' );
-is( DBD::Patroni::db::_is_connection_error('connection reset by peer'),
+is( DBD::Patroni::_is_connection_error('connection reset by peer'),
     1, 'connection reset is connection error' );
-is( DBD::Patroni::db::_is_connection_error('could not connect to server'),
+is( DBD::Patroni::_is_connection_error('could not connect to server'),
     1, 'could not connect is connection error' );
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'server closed the connection unexpectedly'),
     1,
     'server closed is connection error'
 );
-is( DBD::Patroni::db::_is_connection_error('no connection to the server'),
+is( DBD::Patroni::_is_connection_error('no connection to the server'),
     1, 'no connection is connection error' );
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'terminating connection due to administrator command'),
     1,
     'terminating connection is connection error'
 );
-is( DBD::Patroni::db::_is_connection_error('connection timed out'),
+is( DBD::Patroni::_is_connection_error('connection timed out'),
     1, 'connection timed out is connection error' );
-is( DBD::Patroni::db::_is_connection_error('lost connection to server'),
+is( DBD::Patroni::_is_connection_error('lost connection to server'),
     1, 'lost connection is connection error' );
 
 # Read-only errors (leader became replica after failover)
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'cannot execute INSERT in a read-only transaction'),
     1,
     'read-only INSERT is connection error'
 );
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'cannot execute UPDATE in a read-only transaction'),
     1,
     'read-only UPDATE is connection error'
 );
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'cannot execute DELETE in a read-only transaction'),
     1,
     'read-only DELETE is connection error'
 );
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'ERROR: cannot execute TRUNCATE in a read-only transaction'),
     1,
     'read-only TRUNCATE is connection error'
@@ -143,60 +144,60 @@ is(
 
 # PostgreSQL recovery/startup errors (node not ready after failover)
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'FATAL: the database system is starting up'),
     1,
     'database starting up is connection error'
 );
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'FATAL: the database system is in recovery mode'),
     1,
     'database in recovery mode is connection error'
 );
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'FATAL: the database system is shutting down'),
     1,
     'database shutting down is connection error'
 );
-is( DBD::Patroni::db::_is_connection_error('recovery is in progress'),
+is( DBD::Patroni::_is_connection_error('recovery is in progress'),
     1, 'recovery in progress is connection error' );
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'FATAL: the database system is not accepting connections'),
     1,
     'not accepting connections is connection error'
 );
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'FATAL: hot standby mode is disabled'),
     1,
     'hot standby disabled is connection error'
 );
 
 # SQL errors that should NOT trigger rediscovery
-is( DBD::Patroni::db::_is_connection_error('syntax error at or near "SELEC"'),
+is( DBD::Patroni::_is_connection_error('syntax error at or near "SELEC"'),
     0, 'syntax error is not connection error' );
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'relation "nonexistent" does not exist'),
     0,
     'missing relation is not connection error'
 );
 is(
-    DBD::Patroni::db::_is_connection_error('permission denied for table users'),
+    DBD::Patroni::_is_connection_error('permission denied for table users'),
     0, 'permission denied is not connection error'
 );
 is(
-    DBD::Patroni::db::_is_connection_error(
+    DBD::Patroni::_is_connection_error(
         'duplicate key value violates unique constraint'),
     0,
     'unique violation is not connection error'
 );
-is( DBD::Patroni::db::_is_connection_error(undef),
+is( DBD::Patroni::_is_connection_error(undef),
     0, 'undef is not connection error' );
-is( DBD::Patroni::db::_is_connection_error(''),
+is( DBD::Patroni::_is_connection_error(''),
     0, 'empty string is not connection error' );
 
 done_testing();

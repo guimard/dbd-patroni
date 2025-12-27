@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 use Test::More;
+use DBI;
 
 # Skip if not in integration test environment
 unless ( $ENV{PATRONI_URLS} ) {
@@ -18,14 +19,11 @@ my $sslmode      = $ENV{PGSSLMODE}  || 'disable';
 
 diag("Testing with Patroni URLs: $patroni_urls");
 
-my $dsn = "dbname=$dbname;sslmode=$sslmode";
+my $dsn = "dbi:Patroni:dbname=$dbname;sslmode=$sslmode;patroni_url=$patroni_urls";
 
 # Test 1: Basic connection
 subtest 'Basic connection' => sub {
-    my $dbh = eval {
-        DBD::Patroni->connect( $dsn, $user, $pass,
-            { patroni_url => $patroni_urls } );
-    };
+    my $dbh = eval { DBI->connect( $dsn, $user, $pass ) };
 
     ok( !$@,        'Connection successful' ) or diag("Error: $@");
     ok( $dbh,       'Got database handle' );
@@ -36,8 +34,7 @@ subtest 'Basic connection' => sub {
 
 # Test 2: Read/Write routing
 subtest 'Read/Write routing' => sub {
-    my $dbh = DBD::Patroni->connect( $dsn, $user, $pass,
-        { patroni_url => $patroni_urls } );
+    my $dbh = DBI->connect( $dsn, $user, $pass );
 
     # Write operation (should go to leader)
     my $name = "test_user_" . time();
@@ -68,13 +65,7 @@ subtest 'Read/Write routing' => sub {
 
 # Test 3: Transaction handling
 subtest 'Transaction handling' => sub {
-    my $dbh = DBD::Patroni->connect(
-        $dsn, $user, $pass,
-        {
-            patroni_url => $patroni_urls,
-            AutoCommit  => 1,
-        }
-    );
+    my $dbh = DBI->connect( $dsn, $user, $pass, { AutoCommit => 1 } );
 
     # Start transaction
     $dbh->begin_work;
@@ -110,15 +101,10 @@ subtest 'Transaction handling' => sub {
 
 # Test 4: Load balancing modes
 subtest 'Load balancing modes' => sub {
+    my $base_dsn = "dbi:Patroni:dbname=$dbname;sslmode=$sslmode;patroni_url=$patroni_urls";
 
     # Test leader_only mode
-    my $dbh = DBD::Patroni->connect(
-        $dsn, $user, $pass,
-        {
-            patroni_url => $patroni_urls,
-            patroni_lb  => 'leader_only',
-        }
-    );
+    my $dbh = DBI->connect( "$base_dsn;patroni_lb=leader_only", $user, $pass );
 
     ok( $dbh, 'leader_only mode connects' );
 
@@ -131,25 +117,13 @@ subtest 'Load balancing modes' => sub {
     $dbh->disconnect;
 
     # Test random mode
-    $dbh = DBD::Patroni->connect(
-        $dsn, $user, $pass,
-        {
-            patroni_url => $patroni_urls,
-            patroni_lb  => 'random',
-        }
-    );
+    $dbh = DBI->connect( "$base_dsn;patroni_lb=random", $user, $pass );
 
     ok( $dbh, 'random mode connects' );
     $dbh->disconnect;
 
     # Test round_robin mode (default)
-    $dbh = DBD::Patroni->connect(
-        $dsn, $user, $pass,
-        {
-            patroni_url => $patroni_urls,
-            patroni_lb  => 'round_robin',
-        }
-    );
+    $dbh = DBI->connect( "$base_dsn;patroni_lb=round_robin", $user, $pass );
 
     ok( $dbh, 'round_robin mode connects' );
     $dbh->disconnect;
@@ -157,8 +131,7 @@ subtest 'Load balancing modes' => sub {
 
 # Test 5: Multiple queries
 subtest 'Multiple queries' => sub {
-    my $dbh = DBD::Patroni->connect( $dsn, $user, $pass,
-        { patroni_url => $patroni_urls } );
+    my $dbh = DBI->connect( $dsn, $user, $pass );
 
     # Insert multiple rows
     my @names;
@@ -187,14 +160,8 @@ subtest 'Multiple queries' => sub {
 
 # Test 6: Error handling
 subtest 'Error handling' => sub {
-    my $dbh = DBD::Patroni->connect(
-        $dsn, $user, $pass,
-        {
-            patroni_url => $patroni_urls,
-            RaiseError  => 0,
-            PrintError  => 0,
-        }
-    );
+    my $dbh = DBI->connect( $dsn, $user, $pass,
+        { RaiseError => 0, PrintError => 0 } );
 
     # Try invalid SQL
     my $rv = $dbh->do("INVALID SQL SYNTAX");
@@ -206,8 +173,7 @@ subtest 'Error handling' => sub {
 
 # Test 7: Prepare with placeholders
 subtest 'Prepare with placeholders' => sub {
-    my $dbh = DBD::Patroni->connect( $dsn, $user, $pass,
-        { patroni_url => $patroni_urls } );
+    my $dbh = DBI->connect( $dsn, $user, $pass );
 
     my $sth = $dbh->prepare("SELECT * FROM users WHERE name = ? AND id > ?");
     ok( $sth, 'Prepare with multiple placeholders' );

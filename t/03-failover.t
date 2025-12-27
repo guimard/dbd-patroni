@@ -2,6 +2,7 @@
 use strict;
 use warnings;
 use Test::More;
+use DBI;
 
 # Skip if not in integration test environment
 unless ( $ENV{PATRONI_URLS} && $ENV{TEST_FAILOVER} ) {
@@ -18,7 +19,7 @@ my $user         = $ENV{PGUSER}     || 'testuser';
 my $pass         = $ENV{PGPASSWORD} || 'testpass';
 my $dbname       = $ENV{PGDATABASE} || 'testdb';
 my $sslmode      = $ENV{PGSSLMODE}  || 'disable';
-my $dsn          = "dbname=$dbname;sslmode=$sslmode";
+my $dsn = "dbi:Patroni:dbname=$dbname;sslmode=$sslmode;patroni_url=$patroni_urls";
 
 # Helper to get cluster info
 sub get_cluster_info {
@@ -114,8 +115,7 @@ subtest 'Detect current leader' => sub {
 
 # Test 2: Connection survives leader change
 subtest 'Connection survives leader change' => sub {
-    my $dbh = DBD::Patroni->connect( $dsn, $user, $pass,
-        { patroni_url => $patroni_urls } );
+    my $dbh = DBI->connect( $dsn, $user, $pass );
 
     ok( $dbh, 'Initial connection' );
 
@@ -184,10 +184,7 @@ subtest 'Connection survives leader change' => sub {
 subtest 'New connection after failover' => sub {
 
     # Create a fresh connection after the failover
-    my $dbh = eval {
-        DBD::Patroni->connect( $dsn, $user, $pass,
-            { patroni_url => $patroni_urls } );
-    };
+    my $dbh = eval { DBI->connect( $dsn, $user, $pass ) };
 
     ok( !$@,  'New connection after failover' ) or diag("Error: $@");
     ok( $dbh, 'Got database handle' );
@@ -215,9 +212,8 @@ subtest 'Cached connection survives failover' => sub {
     diag("Waiting for cluster to stabilize before cached connection test...");
     wait_for_replicas(30);
 
-    # Get a cached connection using DBD::Patroni->connect_cached
-    my $dbh1 = DBD::Patroni->connect_cached( $dsn, $user, $pass,
-        { patroni_url => $patroni_urls, RaiseError => 1 } );
+    # Get a cached connection using DBI->connect_cached
+    my $dbh1 = DBI->connect_cached( $dsn, $user, $pass, { RaiseError => 1 } );
 
     ok( $dbh1, 'Got cached connection' );
 
@@ -258,8 +254,7 @@ subtest 'Cached connection survives failover' => sub {
     isnt( $current_leader, $old_leader, 'Leader has changed (cached test)' );
 
     # Get another cached connection - should return the same handle or reconnect
-    my $dbh2 = DBD::Patroni->connect_cached( $dsn, $user, $pass,
-        { patroni_url => $patroni_urls, RaiseError => 1 } );
+    my $dbh2 = DBI->connect_cached( $dsn, $user, $pass, { RaiseError => 1 } );
 
     ok( $dbh2, 'Got second cached connection' );
 
@@ -301,30 +296,29 @@ subtest 'Recovery from read-only error' => sub {
     diag("Testing read-only recovery using replica: $replica->{host}");
 
     # Create a DBD::Patroni connection normally
-    my $dbh = DBD::Patroni->connect( $dsn, $user, $pass,
-        { patroni_url => $patroni_urls } );
+    my $dbh = DBI->connect( $dsn, $user, $pass );
 
     ok( $dbh, 'Got initial connection' );
 
-  # Manually replace the leader connection with a replica connection
-  # This simulates what happens when the leader becomes a replica after failover
+    # Manually replace the leader connection with a replica connection
+    # This simulates what happens when the leader becomes a replica after failover
     my $replica_dsn =
-"dbi:Pg:dbname=$dbname;host=$replica->{host};port=$replica->{port};sslmode=$sslmode";
+      "dbi:Pg:dbname=$dbname;host=$replica->{host};port=$replica->{port};sslmode=$sslmode";
     my $replica_dbh =
       DBI->connect( $replica_dsn, $user, $pass, { RaiseError => 1 } );
     skip "Cannot connect to replica directly", 2 unless $replica_dbh;
 
-    # Save the real leader and replace with replica
-    my $real_leader = $dbh->{leader_dbh};
-    $dbh->{leader_dbh} = $replica_dbh;
+    # Save the real leader and replace with replica (access internal attribute)
+    my $real_leader = $dbh->{patroni_leader_dbh};
+    $dbh->{patroni_leader_dbh} = $replica_dbh;
 
     diag("Replaced leader connection with replica connection");
 
-# Try to write - this should fail with read-only error and trigger automatic recovery
-# The _with_retry mechanism should:
-# 1. Detect the read-only error
-# 2. Call _rediscover_cluster to reconnect to the real leader
-# 3. Retry the operation and succeed
+    # Try to write - this should fail with read-only error and trigger automatic recovery
+    # The _with_retry mechanism should:
+    # 1. Detect the read-only error
+    # 2. Call _rediscover_cluster to reconnect to the real leader
+    # 3. Retry the operation and succeed
     my $rv = eval {
         $dbh->do( "INSERT INTO logs (message) VALUES (?)",
             undef, "read-only test recovered" );
@@ -338,7 +332,7 @@ subtest 'Recovery from read-only error' => sub {
 
     # Verify the data was written
     my $sth = $dbh->prepare(
-"SELECT message FROM logs WHERE message LIKE 'read-only test%' ORDER BY id DESC LIMIT 1"
+        "SELECT message FROM logs WHERE message LIKE 'read-only test%' ORDER BY id DESC LIMIT 1"
     );
     $sth->execute;
     my ($msg) = $sth->fetchrow_array;
@@ -369,7 +363,7 @@ subtest 'Verify cluster state after tests' => sub {
         diag("    $m->{name}: $m->{state}");
     }
 
-# After failover, some nodes may still be recovering - just check we have a leader
+    # After failover, some nodes may still be recovering - just check we have a leader
     ok( 1, 'Cluster state logged' );
 };
 

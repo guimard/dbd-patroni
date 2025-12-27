@@ -30,10 +30,17 @@ make install
 ## Usage
 
 ```perl
-use DBD::Patroni;
+use DBI;
 
-my $dbh = DBD::Patroni->connect(
-    "dbname=mydb",
+# Connect using standard DBI syntax with patroni_url in DSN
+my $dbh = DBI->connect(
+    "dbi:Patroni:dbname=mydb;patroni_url=http://patroni1:8008/cluster,http://patroni2:8008/cluster",
+    $user, $password
+);
+
+# Or with attributes hash
+my $dbh = DBI->connect(
+    "dbi:Patroni:dbname=mydb",
     $user, $password,
     {
         patroni_url => "http://patroni1:8008/cluster,http://patroni2:8008/cluster",
@@ -60,11 +67,21 @@ $dbh->disconnect;
 
 ## Connection Attributes
 
+All Patroni attributes can be specified either in the DSN string or in the attributes hash. Attributes hash takes precedence.
+
 | Attribute | Description | Default |
 |-----------|-------------|---------|
 | `patroni_url` | Comma-separated Patroni REST API endpoints | **required** |
 | `patroni_lb` | Load balancing mode: `round_robin`, `random`, `leader_only` | `round_robin` |
 | `patroni_timeout` | HTTP timeout for Patroni API calls (seconds) | `3` |
+
+Example with all attributes in DSN:
+```perl
+my $dbh = DBI->connect(
+    "dbi:Patroni:dbname=mydb;patroni_url=http://host:8008/cluster;patroni_lb=random;patroni_timeout=5",
+    $user, $password
+);
+```
 
 ## Query Routing
 
