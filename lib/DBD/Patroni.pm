@@ -393,7 +393,7 @@ sub do {
     my $is_readonly = DBD::Patroni::_is_readonly($statement);
     my $target      = $is_readonly ? 'replica' : 'leader';
 
-    return DBD::Patroni::_with_retry(
+    my $result = DBD::Patroni::_with_retry(
         $dbh,
         $target,
         sub {
@@ -401,9 +401,23 @@ sub do {
                 $is_readonly
               ? $dbh->{patroni_replica_dbh}
               : $dbh->{patroni_leader_dbh};
-            return $handle->do( $statement, $attr, @bind );
+            my $rv = $handle->do( $statement, $attr, @bind );
+
+            # Propagate error state from underlying handle
+            unless ( defined $rv ) {
+                my $err = $handle->errstr;
+                if ( $err && DBD::Patroni::_is_connection_error($err) ) {
+                    die $err;    # Will trigger retry
+                }
+
+                # Propagate error to our dbh
+                $dbh->set_err( $handle->err, $err, $handle->state );
+            }
+            return $rv;
         }
     );
+
+    return $result;
 }
 
 sub ping {
@@ -585,6 +599,17 @@ sub execute {
                 $real_sth = $sth->{patroni_real_sth};
             }
             my $rv = $real_sth->execute(@bind);
+
+            # Check for connection errors that need retry
+            unless ( defined $rv ) {
+                my $err = $real_sth->errstr;
+                if ( $err && DBD::Patroni::_is_connection_error($err) ) {
+                    die $err;    # Will trigger retry
+                }
+
+                # Propagate error to our dbh
+                $dbh->set_err( $real_sth->err, $err, $real_sth->state );
+            }
 
             # Copy NUM_OF_FIELDS to our sth for DBI
             if ( $real_sth->{NUM_OF_FIELDS} ) {
