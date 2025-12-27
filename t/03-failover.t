@@ -58,11 +58,37 @@ sub trigger_failover {
     my $resp = $ua->post(
         $failover_url,
         'Content-Type' => 'application/json',
-        Content        => encode_json({ leader => $new_leader }),
+        Content        => encode_json({ candidate => $new_leader }),
     );
+
+    diag("Failover response: " . $resp->status_line);
+    diag("Failover body: " . $resp->decoded_content) if !$resp->is_success;
 
     return $resp->is_success;
 }
+
+# Wait for all replicas to be running
+sub wait_for_replicas {
+    my $max_attempts = shift || 30;
+
+    for my $i (1..$max_attempts) {
+        my $info = get_cluster_info();
+        next unless $info;
+
+        my @running = grep { $_->{state} eq 'running' } @{$info->{members}};
+        if (@running >= 3) {
+            diag("All 3 nodes are running");
+            return 1;
+        }
+        diag("Attempt $i/$max_attempts: " . scalar(@running) . " nodes running");
+        sleep 2;
+    }
+    return 0;
+}
+
+# Wait for all nodes to be ready before starting tests
+diag("Waiting for all cluster nodes to be ready...");
+wait_for_replicas(30);
 
 # Test 1: Detect current leader
 subtest 'Detect current leader' => sub {
