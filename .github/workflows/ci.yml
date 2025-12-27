@@ -1,0 +1,195 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    name: Unit Tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+
+      - name: Install dependencies
+        run: |
+          cpanm --notest DBI DBD::Pg LWP::UserAgent JSON Test::More
+
+      - name: Run unit tests
+        run: prove -v -Ilib t/01-basic.t
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    name: Integration Tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Patroni cluster
+        working-directory: docker
+        run: |
+          chmod +x init-db.sh wait-for-cluster.sh
+          docker compose up -d etcd patroni1 patroni2 patroni3
+
+      - name: Wait for cluster to be ready
+        working-directory: docker
+        run: |
+          echo "Waiting for Patroni cluster..."
+          for i in {1..60}; do
+            if docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list 2>/dev/null | grep -q "Leader"; then
+              echo "Cluster is ready"
+              docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list
+              break
+            fi
+            echo "Attempt $i/60..."
+            sleep 5
+          done
+
+      - name: Wait for database initialization
+        working-directory: docker
+        run: |
+          echo "Waiting for database to be initialized..."
+          for i in {1..30}; do
+            # Find the leader
+            LEADER=$(docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list 2>/dev/null | grep Leader | awk '{print $2}')
+            if [ -n "$LEADER" ]; then
+              # Check if testdb exists
+              if docker compose exec -T $LEADER psql -U postgres -c "SELECT 1 FROM pg_database WHERE datname='testdb'" 2>/dev/null | grep -q "1"; then
+                echo "Database testdb is ready"
+                break
+              fi
+            fi
+            echo "Attempt $i/30..."
+            sleep 3
+          done
+
+      - name: Get cluster info
+        working-directory: docker
+        run: |
+          docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list
+
+      - name: Setup Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+
+      - name: Install Perl dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev
+          cpanm --notest DBI DBD::Pg LWP::UserAgent JSON Test::More
+
+      - name: Run integration tests
+        env:
+          PATRONI_URLS: http://localhost:8008/cluster,http://localhost:8018/cluster,http://localhost:8028/cluster
+          PGUSER: testuser
+          PGPASSWORD: testpass
+          PGDATABASE: testdb
+        run: |
+          # Map ports from containers
+          docker compose -f docker/docker-compose.yml port patroni1 8008 || true
+
+          # Update PATRONI_URLS with actual container IPs
+          PATRONI1_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker-patroni1-1 2>/dev/null || docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker_patroni1_1)
+          PATRONI2_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker-patroni2-1 2>/dev/null || docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker_patroni2_1)
+          PATRONI3_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker-patroni3-1 2>/dev/null || docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker_patroni3_1)
+
+          export PATRONI_URLS="http://${PATRONI1_IP}:8008/cluster,http://${PATRONI2_IP}:8008/cluster,http://${PATRONI3_IP}:8008/cluster"
+          echo "PATRONI_URLS=$PATRONI_URLS"
+
+          prove -v -Ilib t/02-integration.t
+
+      - name: Cleanup
+        if: always()
+        working-directory: docker
+        run: docker compose down -v
+
+  failover-tests:
+    runs-on: ubuntu-latest
+    name: Failover Tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Patroni cluster
+        working-directory: docker
+        run: |
+          chmod +x init-db.sh wait-for-cluster.sh
+          docker compose up -d etcd patroni1 patroni2 patroni3
+
+      - name: Wait for cluster to be ready
+        working-directory: docker
+        run: |
+          echo "Waiting for Patroni cluster..."
+          for i in {1..60}; do
+            RUNNING=$(docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list 2>/dev/null | grep -c "running" || echo "0")
+            if [ "$RUNNING" -ge 3 ]; then
+              echo "All 3 nodes are running"
+              docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list
+              break
+            fi
+            echo "Attempt $i/60... ($RUNNING nodes running)"
+            sleep 5
+          done
+
+      - name: Wait for database initialization
+        working-directory: docker
+        run: |
+          sleep 10
+          for i in {1..30}; do
+            LEADER=$(docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list 2>/dev/null | grep Leader | awk '{print $2}')
+            if [ -n "$LEADER" ]; then
+              if docker compose exec -T $LEADER psql -U postgres -c "SELECT 1 FROM pg_database WHERE datname='testdb'" 2>/dev/null | grep -q "1"; then
+                echo "Database testdb is ready on $LEADER"
+                break
+              fi
+            fi
+            echo "Attempt $i/30..."
+            sleep 3
+          done
+
+      - name: Setup Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.38'
+
+      - name: Install Perl dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev
+          cpanm --notest DBI DBD::Pg LWP::UserAgent JSON Test::More
+
+      - name: Run failover tests
+        env:
+          PGUSER: testuser
+          PGPASSWORD: testpass
+          PGDATABASE: testdb
+          TEST_FAILOVER: 1
+        run: |
+          PATRONI1_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker-patroni1-1 2>/dev/null || docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker_patroni1_1)
+          PATRONI2_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker-patroni2-1 2>/dev/null || docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker_patroni2_1)
+          PATRONI3_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker-patroni3-1 2>/dev/null || docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' docker_patroni3_1)
+
+          export PATRONI_URLS="http://${PATRONI1_IP}:8008/cluster,http://${PATRONI2_IP}:8008/cluster,http://${PATRONI3_IP}:8008/cluster"
+          echo "PATRONI_URLS=$PATRONI_URLS"
+
+          prove -v -Ilib t/03-failover.t
+
+      - name: Show cluster state after tests
+        if: always()
+        working-directory: docker
+        run: |
+          docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list || true
+
+      - name: Cleanup
+        if: always()
+        working-directory: docker
+        run: docker compose down -v

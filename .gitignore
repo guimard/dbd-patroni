@@ -1,0 +1,22 @@
+# Build artifacts
+Makefile
+MYMETA.json
+MYMETA.yml
+blib/
+pm_to_blib
+*.o
+*.bs
+*.old
+*~
+
+# Distribution
+DBD-Patroni-*
+MANIFEST.bak
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Docker volumes
+docker/*_data/

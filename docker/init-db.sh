@@ -1,0 +1,27 @@
+#!/bin/bash
+set -e
+
+# Create test user and database
+psql -U postgres <<-EOSQL
+    CREATE USER testuser PASSWORD 'testpass';
+    CREATE DATABASE testdb OWNER testuser;
+EOSQL
+
+# Create test tables
+psql -U postgres -d testdb <<-EOSQL
+    CREATE TABLE users (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    GRANT ALL PRIVILEGES ON TABLE users TO testuser;
+    GRANT USAGE, SELECT ON SEQUENCE users_id_seq TO testuser;
+
+    CREATE TABLE logs (
+        id SERIAL PRIMARY KEY,
+        message TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    GRANT ALL PRIVILEGES ON TABLE logs TO testuser;
+    GRANT USAGE, SELECT ON SEQUENCE logs_id_seq TO testuser;
+EOSQL
