@@ -53,23 +53,37 @@ jobs:
             sleep 5
           done
 
-      - name: Wait for database initialization
+      - name: Initialize test database
         working-directory: docker
         run: |
-          echo "Waiting for database to be initialized..."
-          for i in {1..30}; do
-            # Find the leader
-            LEADER=$(docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list 2>/dev/null | grep Leader | awk '{print $2}')
-            if [ -n "$LEADER" ]; then
-              # Check if testdb exists
-              if docker compose exec -T $LEADER psql -U postgres -c "SELECT 1 FROM pg_database WHERE datname='testdb'" 2>/dev/null | grep -q "1"; then
-                echo "Database testdb is ready"
-                break
-              fi
-            fi
-            echo "Attempt $i/30..."
-            sleep 3
-          done
+          # Find the leader and create test database
+          LEADER=$(docker compose exec -T patroni1 patronictl -c /home/postgres/postgres.yml list 2>/dev/null | grep Leader | awk '{print $2}')
+          echo "Leader is: $LEADER"
+
+          # Create user and database
+          docker compose exec -T $LEADER psql -U postgres -c "CREATE USER testuser WITH PASSWORD 'testpass';" || true
+          docker compose exec -T $LEADER psql -U postgres -c "CREATE DATABASE testdb OWNER testuser;" || true
+
+          # Create test tables
+          docker compose exec -T $LEADER psql -U postgres -d testdb -c "
+            CREATE TABLE IF NOT EXISTS users (
+              id SERIAL PRIMARY KEY,
+              name VARCHAR(100) NOT NULL,
+              created_at TIMESTAMP DEFAULT NOW()
+            );
+            GRANT ALL PRIVILEGES ON TABLE users TO testuser;
+            GRANT USAGE, SELECT ON SEQUENCE users_id_seq TO testuser;
+
+            CREATE TABLE IF NOT EXISTS logs (
+              id SERIAL PRIMARY KEY,
+              message TEXT,
+              created_at TIMESTAMP DEFAULT NOW()
+            );
+            GRANT ALL PRIVILEGES ON TABLE logs TO testuser;
+            GRANT USAGE, SELECT ON SEQUENCE logs_id_seq TO testuser;
+          "
+
+          echo "Test database initialized"
 
       - name: Get cluster info
         working-directory: docker
