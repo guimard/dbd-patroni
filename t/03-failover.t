@@ -312,7 +312,7 @@ subtest 'Recovery from read-only error' => sub {
     # Manually replace the leader connection with a replica connection
     # This simulates what happens when the leader becomes a replica after failover
     my $replica_dsn = "dbi:Pg:dbname=$dbname;host=$replica->{host};port=$replica->{port};sslmode=$sslmode";
-    my $replica_dbh = DBI->connect($replica_dsn, $user, $pass, { RaiseError => 0 });
+    my $replica_dbh = DBI->connect($replica_dsn, $user, $pass, { RaiseError => 1 });
     skip "Cannot connect to replica directly", 2 unless $replica_dbh;
 
     # Save the real leader and replace with replica
@@ -321,17 +321,17 @@ subtest 'Recovery from read-only error' => sub {
 
     diag("Replaced leader connection with replica connection");
 
-    # Try to write - this should fail with read-only error and trigger recovery
+    # Try to write - this should fail with read-only error and trigger automatic recovery
+    # The _with_retry mechanism should:
+    # 1. Detect the read-only error
+    # 2. Call _rediscover_cluster to reconnect to the real leader
+    # 3. Retry the operation and succeed
     my $rv = eval {
-        $dbh->do("INSERT INTO logs (message) VALUES (?)", undef, "read-only test");
+        $dbh->do("INSERT INTO logs (message) VALUES (?)", undef, "read-only test recovered");
     };
 
-    if (!$rv && $@) {
-        diag("First write attempt error (expected): $@");
-        # The connection should have been rediscovered, try again
-        $rv = eval {
-            $dbh->do("INSERT INTO logs (message) VALUES (?)", undef, "read-only test recovered");
-        };
+    if ($@) {
+        diag("Write attempt error: $@");
     }
 
     ok($rv, 'Write succeeded after read-only recovery');
