@@ -3,7 +3,7 @@
    "author" : [
       "Xavier Guimard"
    ],
-   "dynamic_config" : 0,
+   "dynamic_config" : 1,
    "generated_by" : "ExtUtils::MakeMaker version 7.70, CPAN::Meta::Converter version 2.150010",
    "license" : [
       "perl_5"
@@ -56,6 +56,6 @@
          "web" : "https://github.com/guimard/dbd-patroni"
       }
    },
-   "version" : "0.01",
+   "version" : "0.02",
    "x_serialization_backend" : "JSON::PP version 4.16"
 }
