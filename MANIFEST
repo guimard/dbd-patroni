@@ -1,13 +1,12 @@
+.github/workflows/ci.yml
 Changes
-docker/docker-compose.yml
-docker/init-db.sh
-docker/wait-for-cluster.sh
 lib/DBD/Patroni.pm
 lib/DBD/Patroni/db.pm
 lib/DBD/Patroni/dr.pm
 lib/DBD/Patroni/st.pm
 Makefile.PL
 MANIFEST			This list of files
+MANIFEST.SKIP
 README.md
 t/01-basic.t
 t/02-integration.t
