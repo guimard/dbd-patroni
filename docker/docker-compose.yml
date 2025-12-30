@@ -115,12 +115,18 @@ services:
       bash -c "
         apt-get update && apt-get install -y libpq-dev postgresql-client curl jq &&
         cpanm --notest DBI DBD::Pg LWP::UserAgent JSON Test::More &&
-        chmod +x /wait-for-cluster.sh &&
-        /wait-for-cluster.sh &&
+        bash /wait-for-cluster.sh &&
         cd /app && prove -v -Ilib t/
       "
     networks:
       - patroni-network
+    depends_on:
+      patroni1:
+        condition: service_healthy
+      patroni2:
+        condition: service_healthy
+      patroni3:
+        condition: service_healthy
 
 volumes:
   patroni1_data:
