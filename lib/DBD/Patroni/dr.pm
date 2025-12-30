@@ -2,7 +2,7 @@
 #
 #  DBD::Patroni::dr - Driver class for DBD::Patroni
 #
-#  Copyright (c) 2024 Xavier Guimard
+#  Copyright (c) 2025 Xavier Guimard
 #
 #  You may distribute under the terms of either the GNU General Public
 #  License or the Artistic License, as specified in the Perl README file.
