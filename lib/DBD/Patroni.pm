@@ -15,7 +15,7 @@ package DBD::Patroni;
 use DBI;
 require DBD::Pg;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 our $drh     = undef;    # Driver handle
 our $err     = 0;        # DBI error code
 our $errstr  = '';       # DBI error string
