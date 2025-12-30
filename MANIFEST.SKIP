@@ -1,6 +1,8 @@
 # Avoid version control files
 \B\.git\b
 \B\.gitignore\b
+^\.github/
+^docker/
 
 # Avoid IDE/editor files
 \.vscode\b
@@ -21,9 +23,6 @@
 \.bak$
 \.old$
 \.orig$
-
-# Avoid Docker test infrastructure
-^docker/
 
 # Avoid temp files
 \.tmp$

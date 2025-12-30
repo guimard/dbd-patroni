@@ -1,4 +1,3 @@
-.github/workflows/ci.yml
 Changes
 lib/DBD/Patroni.pm
 lib/DBD/Patroni/db.pm
