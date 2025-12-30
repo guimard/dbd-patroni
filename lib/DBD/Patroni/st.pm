@@ -65,31 +65,37 @@ sub execute {
 
 sub fetch {
     my $sth = shift;
+    return unless $sth->{patroni_real_sth};
     return $sth->{patroni_real_sth}->fetch;
 }
 
 sub fetchrow_array {
     my $sth = shift;
+    return unless $sth->{patroni_real_sth};
     return $sth->{patroni_real_sth}->fetchrow_array;
 }
 
 sub fetchrow_arrayref {
     my $sth = shift;
+    return unless $sth->{patroni_real_sth};
     return $sth->{patroni_real_sth}->fetchrow_arrayref;
 }
 
 sub fetchrow_hashref {
     my $sth = shift;
+    return unless $sth->{patroni_real_sth};
     return $sth->{patroni_real_sth}->fetchrow_hashref(@_);
 }
 
 sub fetchall_arrayref {
     my $sth = shift;
+    return unless $sth->{patroni_real_sth};
     return $sth->{patroni_real_sth}->fetchall_arrayref(@_);
 }
 
 sub fetchall_hashref {
     my $sth = shift;
+    return unless $sth->{patroni_real_sth};
     return $sth->{patroni_real_sth}->fetchall_hashref(@_);
 }
 
@@ -107,21 +113,25 @@ sub rows {
 
 sub bind_param {
     my $sth = shift;
+    return unless $sth->{patroni_real_sth};
     return $sth->{patroni_real_sth}->bind_param(@_);
 }
 
 sub bind_param_inout {
     my $sth = shift;
+    return unless $sth->{patroni_real_sth};
     return $sth->{patroni_real_sth}->bind_param_inout(@_);
 }
 
 sub bind_col {
     my $sth = shift;
+    return unless $sth->{patroni_real_sth};
     return $sth->{patroni_real_sth}->bind_col(@_);
 }
 
 sub bind_columns {
     my $sth = shift;
+    return unless $sth->{patroni_real_sth};
     return $sth->{patroni_real_sth}->bind_columns(@_);
 }
 

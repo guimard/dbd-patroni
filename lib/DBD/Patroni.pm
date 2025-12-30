@@ -110,6 +110,21 @@ sub _parse_dsn {
     return ( join( ';', @remaining ), \%params );
 }
 
+# Build DSN with host/port, cleaning up any existing host/port params
+sub _build_dsn {
+    my ( $dsn, $host, $port ) = @_;
+
+    # Remove existing host/port parameters
+    $dsn =~ s/(?:host|port)=[^;]*;?//gi;
+
+    # Clean up multiple semicolons and leading/trailing semicolons
+    $dsn =~ s/;+/;/g;
+    $dsn =~ s/^;|;$//g;
+
+    # Append new host/port
+    return "$dsn;host=$host;port=$port";
+}
+
 # Detect read-only queries
 sub _is_readonly {
     my $sql = shift;

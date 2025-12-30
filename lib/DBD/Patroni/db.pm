@@ -14,6 +14,7 @@ use warnings;
 
 use DBI;
 use DBD::Patroni;
+use Scalar::Util qw(refaddr);
 
 our $imp_data_size = 0;
 
@@ -26,7 +27,7 @@ sub _rediscover_cluster {
     eval { $dbh->{patroni_leader_dbh}->disconnect }
       if $dbh->{patroni_leader_dbh};
     if (   $dbh->{patroni_replica_dbh}
-        && $dbh->{patroni_replica_dbh} ne $dbh->{patroni_leader_dbh} )
+        && refaddr( $dbh->{patroni_replica_dbh} ) != refaddr( $dbh->{patroni_leader_dbh} ) )
     {
         eval { $dbh->{patroni_replica_dbh}->disconnect };
     }
@@ -39,9 +40,7 @@ sub _rediscover_cluster {
     return 0 unless $leader;
 
     # Rebuild leader DSN
-    my $leader_dsn = $config->{dsn};
-    $leader_dsn =~ s/(?:host|port)=[^;]*;?//gi;
-    $leader_dsn .= ";host=$leader->{host};port=$leader->{port}";
+    my $leader_dsn = DBD::Patroni::_build_dsn( $config->{dsn}, $leader->{host}, $leader->{port} );
 
     # Reconnect to leader
     $dbh->{patroni_leader_dbh} =
@@ -55,9 +54,7 @@ sub _rediscover_cluster {
         my $replica =
           DBD::Patroni::_select_replica( \@replicas, $config->{patroni_lb} );
         if ($replica) {
-            my $replica_dsn = $config->{dsn};
-            $replica_dsn =~ s/(?:host|port)=[^;]*;?//gi;
-            $replica_dsn .= ";host=$replica->{host};port=$replica->{port}";
+            my $replica_dsn = DBD::Patroni::_build_dsn( $config->{dsn}, $replica->{host}, $replica->{port} );
 
             $dbh->{patroni_replica_dbh} =
               DBI->connect( "dbi:Pg:$replica_dsn", $config->{user},
@@ -68,40 +65,6 @@ sub _rediscover_cluster {
     $dbh->{patroni_replica_dbh} //= $dbh->{patroni_leader_dbh};
 
     return 1;
-}
-
-# Execute with automatic retry on failure
-sub _with_retry {
-    my ( $dbh, $target, $code ) = @_;
-    my $result;
-    my $wantarray = wantarray;
-
-    foreach my $attempt ( 0 .. 1 ) {
-        my @results;
-        eval {
-            if ($wantarray) {
-                @results = $code->();
-            }
-            else {
-                $result = $code->();
-            }
-        };
-
-        if ($@) {
-            my $error = $@;
-
-            # Only retry on connection errors, not SQL errors
-            if ( DBD::Patroni::_is_connection_error($error) && $attempt == 0 ) {
-                warn
-"DBD::Patroni: Connection error on $target, rediscovering cluster...\n";
-                if ( $dbh->_rediscover_cluster() ) {
-                    next;
-                }
-            }
-            die $error;
-        }
-        return $wantarray ? @results : $result;
-    }
 }
 
 sub prepare {
@@ -178,7 +141,7 @@ sub disconnect {
         $dbh->{patroni_leader_dbh}->disconnect;
     }
     if (   $dbh->{patroni_replica_dbh}
-        && $dbh->{patroni_replica_dbh} ne $dbh->{patroni_leader_dbh} )
+        && refaddr( $dbh->{patroni_replica_dbh} ) != refaddr( $dbh->{patroni_leader_dbh} ) )
     {
         $dbh->{patroni_replica_dbh}->disconnect;
     }
@@ -189,16 +152,19 @@ sub disconnect {
 # Transactions: always on leader
 sub begin_work {
     my $dbh = shift;
+    return unless $dbh->{patroni_leader_dbh};
     return $dbh->{patroni_leader_dbh}->begin_work;
 }
 
 sub commit {
     my $dbh = shift;
+    return unless $dbh->{patroni_leader_dbh};
     return $dbh->{patroni_leader_dbh}->commit;
 }
 
 sub rollback {
     my $dbh = shift;
+    return unless $dbh->{patroni_leader_dbh};
     return $dbh->{patroni_leader_dbh}->rollback;
 }
 
@@ -257,7 +223,7 @@ sub STORE {
           if $dbh->{patroni_leader_dbh};
         $dbh->{patroni_replica_dbh}->{AutoCommit} = $val
           if $dbh->{patroni_replica_dbh}
-          && $dbh->{patroni_replica_dbh} ne $dbh->{patroni_leader_dbh};
+          && refaddr( $dbh->{patroni_replica_dbh} ) != refaddr( $dbh->{patroni_leader_dbh} );
         $dbh->{AutoCommit} = $val;
         return 1;
     }

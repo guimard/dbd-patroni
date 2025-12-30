@@ -48,9 +48,7 @@ sub connect {
     }
 
     # Build leader DSN
-    my $leader_dsn = $dsn;
-    $leader_dsn =~ s/(?:host|port)=[^;]*;?//gi;
-    $leader_dsn .= ";host=$leader->{host};port=$leader->{port}";
+    my $leader_dsn = DBD::Patroni::_build_dsn( $dsn, $leader->{host}, $leader->{port} );
 
     # Connect to leader via DBD::Pg
     my $leader_dbh =
@@ -67,9 +65,7 @@ sub connect {
     if ( @replicas && $patroni_lb ne 'leader_only' ) {
         my $replica = DBD::Patroni::_select_replica( \@replicas, $patroni_lb );
         if ($replica) {
-            my $replica_dsn = $dsn;
-            $replica_dsn =~ s/(?:host|port)=[^;]*;?//gi;
-            $replica_dsn .= ";host=$replica->{host};port=$replica->{port}";
+            my $replica_dsn = DBD::Patroni::_build_dsn( $dsn, $replica->{host}, $replica->{port} );
 
             $replica_dbh =
               DBI->connect( "dbi:Pg:$replica_dsn", $user, $pass,
@@ -112,6 +108,6 @@ sub data_sources {
 
 sub disconnect_all { }
 
-sub DESTROY { undef }
+sub DESTROY { }
 
 1;
