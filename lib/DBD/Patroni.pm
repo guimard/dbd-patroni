@@ -82,14 +82,13 @@ sub _discover_cluster {
         $ua_opts{ssl_opts}{SSL_ca_file} = $ssl_opts->{ca_file};
     }
 
-    # Add client certificate if specified
-    if ( $ssl_opts->{cert_file} ) {
+    # Add client certificate and key for mTLS (must be provided together)
+    if ( $ssl_opts->{cert_file} || $ssl_opts->{key_file} ) {
+        if ( !$ssl_opts->{cert_file} || !$ssl_opts->{key_file} ) {
+            die "patroni_ssl_cert_file and patroni_ssl_key_file must be provided together\n";
+        }
         $ua_opts{ssl_opts}{SSL_cert_file} = $ssl_opts->{cert_file};
-    }
-
-    # Add client key if specified
-    if ( $ssl_opts->{key_file} ) {
-        $ua_opts{ssl_opts}{SSL_key_file} = $ssl_opts->{key_file};
+        $ua_opts{ssl_opts}{SSL_key_file}  = $ssl_opts->{key_file};
     }
 
     my $ua = LWP::UserAgent->new(%ua_opts);
@@ -331,10 +330,12 @@ Path to a CA certificate file for Patroni API SSL verification.
 =item patroni_ssl_cert_file
 
 Path to a client certificate file for Patroni API mutual TLS authentication.
+Must be used together with C<patroni_ssl_key_file>.
 
 =item patroni_ssl_key_file
 
 Path to a client private key file for Patroni API mutual TLS authentication.
+Must be used together with C<patroni_ssl_cert_file>.
 
 =back
 
