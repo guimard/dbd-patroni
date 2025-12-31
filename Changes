@@ -1,5 +1,12 @@
 Revision history for DBD-Patroni
 
+0.04  2025-12-31
+    - Add SSL options for Patroni REST API connections:
+      - patroni_ssl_verify: enable/disable SSL certificate verification
+      - patroni_ssl_ca_file: custom CA certificate file
+      - patroni_ssl_cert_file: client certificate for mTLS
+      - patroni_ssl_key_file: client private key for mTLS
+
 0.03  2025-12-30
     - Split monolithic Patroni.pm into separate modules:
       - DBD::Patroni::dr (Driver class)

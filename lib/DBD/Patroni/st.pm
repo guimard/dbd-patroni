@@ -22,8 +22,7 @@ sub execute {
     my $target = $sth->{patroni_target};
 
     return DBD::Patroni::_with_retry(
-        $dbh,
-        $target,
+        $dbh, $target,
         sub {
             my $real_sth = $sth->{patroni_real_sth};
 
