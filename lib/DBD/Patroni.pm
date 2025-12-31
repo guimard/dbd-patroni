@@ -47,16 +47,51 @@ sub driver {
 
 # Discover Patroni cluster via REST API
 sub _discover_cluster {
-    my ( $urls, $timeout ) = @_;
-    $timeout //= 3;
+    my ( $urls, $timeout, $ssl_opts ) = @_;
+    $timeout  //= 3;
+    $ssl_opts //= {};
 
     require LWP::UserAgent;
     require JSON;
 
-    my $ua = LWP::UserAgent->new(
+    my %ua_opts = (
         timeout   => $timeout,
         env_proxy => 1,
     );
+
+    # Configure SSL options for Patroni API calls
+    if ( defined $ssl_opts->{verify} ) {
+        if ( $ssl_opts->{verify} ) {
+            # Enable full SSL verification (hostname + certificate chain)
+            $ua_opts{ssl_opts} = {
+                verify_hostname => 1,
+                SSL_verify_mode => 1,    # IO::Socket::SSL::SSL_VERIFY_PEER
+            };
+        }
+        else {
+            # Disable SSL verification (no hostname check, no cert verification)
+            $ua_opts{ssl_opts} = {
+                verify_hostname => 0,
+                SSL_verify_mode => 0,    # IO::Socket::SSL::SSL_VERIFY_NONE
+            };
+        }
+    }
+
+    # Add CA file if specified
+    if ( $ssl_opts->{ca_file} ) {
+        $ua_opts{ssl_opts}{SSL_ca_file} = $ssl_opts->{ca_file};
+    }
+
+    # Add client certificate and key for mTLS (must be provided together)
+    if ( $ssl_opts->{cert_file} || $ssl_opts->{key_file} ) {
+        if ( !$ssl_opts->{cert_file} || !$ssl_opts->{key_file} ) {
+            die "patroni_ssl_cert_file and patroni_ssl_key_file must be provided together\n";
+        }
+        $ua_opts{ssl_opts}{SSL_cert_file} = $ssl_opts->{cert_file};
+        $ua_opts{ssl_opts}{SSL_key_file}  = $ssl_opts->{key_file};
+    }
+
+    my $ua = LWP::UserAgent->new(%ua_opts);
 
     for my $url ( split /[,\s]+/, $urls ) {
         next unless $url;
@@ -99,7 +134,7 @@ sub _parse_dsn {
     my @remaining;
 
     for my $part ( split /;/, $dsn ) {
-        if ( $part =~ /^(patroni_url|patroni_lb|patroni_timeout)=(.*)$/i ) {
+        if ( $part =~ /^(patroni_(?:url|lb|timeout|ssl_verify|ssl_ca_file|ssl_cert_file|ssl_key_file))=(.*)$/i ) {
             $params{ lc($1) } = $2;
         }
         else {
@@ -208,6 +243,12 @@ DBD::Patroni - DBI driver for PostgreSQL with Patroni cluster support
         }
     );
 
+    # With HTTPS and disabled SSL verification (self-signed certs)
+    my $dbh = DBI->connect(
+        "dbi:Patroni:dbname=mydb;patroni_url=https://patroni1:8008/cluster;patroni_ssl_verify=0",
+        $user, $password
+    );
+
     # SELECT queries go to replica
     my $sth = $dbh->prepare("SELECT * FROM users WHERE id = ?");
     $sth->execute(1);
@@ -269,6 +310,32 @@ Load balancing mode: C<round_robin> (default), C<random>, or C<leader_only>.
 =item patroni_timeout
 
 HTTP timeout in seconds for Patroni API calls. Default: 3
+
+=item patroni_ssl_verify
+
+Enable or disable SSL certificate verification for Patroni API calls.
+Accepts: C<0>, C<1>, C<no>, C<yes>, C<off>, C<on>, C<false>, C<true>.
+
+Set to C<0> or C<no> to disable SSL verification (hostname check and
+certificate validation). This is useful for self-signed certificates
+or testing environments.
+
+B<Note:> These SSL options only affect connections to the Patroni REST API,
+not the PostgreSQL database connections (use DBD::Pg sslmode for that).
+
+=item patroni_ssl_ca_file
+
+Path to a CA certificate file for Patroni API SSL verification.
+
+=item patroni_ssl_cert_file
+
+Path to a client certificate file for Patroni API mutual TLS authentication.
+Must be used together with C<patroni_ssl_key_file>.
+
+=item patroni_ssl_key_file
+
+Path to a client private key file for Patroni API mutual TLS authentication.
+Must be used together with C<patroni_ssl_cert_file>.
 
 =back
 

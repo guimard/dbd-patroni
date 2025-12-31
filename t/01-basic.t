@@ -34,6 +34,33 @@ is( scalar keys %$params,    0,                            'No patroni params ex
 is( $clean_dsn,             'dbname=test',                             'DSN with comma-separated URLs' );
 is( $params->{patroni_url}, 'http://a:8008/cluster,http://b:8008/cluster', 'comma-separated URLs preserved' );
 
+# Test SSL options parsing
+( $clean_dsn, $params ) = DBD::Patroni::_parse_dsn(
+    'dbname=test;patroni_url=https://host:8008/cluster;patroni_ssl_verify=0');
+is( $clean_dsn,                   'dbname=test',                 'DSN with SSL verify option' );
+is( $params->{patroni_url},       'https://host:8008/cluster',   'patroni_url extracted with SSL' );
+is( $params->{patroni_ssl_verify}, '0',                          'patroni_ssl_verify extracted' );
+
+( $clean_dsn, $params ) = DBD::Patroni::_parse_dsn(
+    'dbname=test;patroni_ssl_verify=1;patroni_ssl_ca_file=/path/to/ca.pem');
+is( $clean_dsn,                    'dbname=test', 'DSN with multiple SSL options' );
+is( $params->{patroni_ssl_verify}, '1',           'patroni_ssl_verify=1 extracted' );
+is( $params->{patroni_ssl_ca_file}, '/path/to/ca.pem', 'patroni_ssl_ca_file extracted' );
+
+( $clean_dsn, $params ) = DBD::Patroni::_parse_dsn(
+    'dbname=test;patroni_ssl_cert_file=/path/to/cert.pem;patroni_ssl_key_file=/path/to/key.pem');
+is( $clean_dsn,                      'dbname=test',           'DSN with client cert options' );
+is( $params->{patroni_ssl_cert_file}, '/path/to/cert.pem',    'patroni_ssl_cert_file extracted' );
+is( $params->{patroni_ssl_key_file},  '/path/to/key.pem',     'patroni_ssl_key_file extracted' );
+
+# Test all SSL options together (don't conflict with DBD::Pg sslmode)
+( $clean_dsn, $params ) = DBD::Patroni::_parse_dsn(
+    'dbname=test;sslmode=require;patroni_url=https://host:8008/cluster;patroni_ssl_verify=0;patroni_ssl_ca_file=/ca.pem');
+is( $clean_dsn, 'dbname=test;sslmode=require', 'DBD::Pg sslmode preserved, patroni SSL options extracted' );
+is( $params->{patroni_ssl_verify},  '0',       'patroni_ssl_verify extracted alongside sslmode' );
+is( $params->{patroni_ssl_ca_file}, '/ca.pem', 'patroni_ssl_ca_file extracted alongside sslmode' );
+ok( !exists $params->{sslmode},                'sslmode not captured as patroni param' );
+
 # Test _build_dsn function
 my $dsn;
 $dsn = DBD::Patroni::_build_dsn( 'dbname=test', 'newhost', 5433 );

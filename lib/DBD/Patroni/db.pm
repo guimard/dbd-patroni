@@ -26,21 +26,25 @@ sub _rediscover_cluster {
     # Close old connections
     eval { $dbh->{patroni_leader_dbh}->disconnect }
       if $dbh->{patroni_leader_dbh};
-    if (   $dbh->{patroni_replica_dbh}
-        && refaddr( $dbh->{patroni_replica_dbh} ) != refaddr( $dbh->{patroni_leader_dbh} ) )
+    if ( $dbh->{patroni_replica_dbh}
+        && refaddr( $dbh->{patroni_replica_dbh} ) !=
+        refaddr( $dbh->{patroni_leader_dbh} ) )
     {
         eval { $dbh->{patroni_replica_dbh}->disconnect };
     }
 
     # Rediscover cluster
-    my ( $leader, @replicas ) =
-      DBD::Patroni::_discover_cluster( $config->{patroni_url},
-        $config->{patroni_timeout} );
+    my ( $leader, @replicas ) = DBD::Patroni::_discover_cluster(
+        $config->{patroni_url},
+        $config->{patroni_timeout},
+        $config->{patroni_ssl_opts}
+    );
 
     return 0 unless $leader;
 
     # Rebuild leader DSN
-    my $leader_dsn = DBD::Patroni::_build_dsn( $config->{dsn}, $leader->{host}, $leader->{port} );
+    my $leader_dsn = DBD::Patroni::_build_dsn( $config->{dsn}, $leader->{host},
+        $leader->{port} );
 
     # Reconnect to leader
     $dbh->{patroni_leader_dbh} =
@@ -54,7 +58,9 @@ sub _rediscover_cluster {
         my $replica =
           DBD::Patroni::_select_replica( \@replicas, $config->{patroni_lb} );
         if ($replica) {
-            my $replica_dsn = DBD::Patroni::_build_dsn( $config->{dsn}, $replica->{host}, $replica->{port} );
+            my $replica_dsn =
+              DBD::Patroni::_build_dsn( $config->{dsn}, $replica->{host},
+                $replica->{port} );
 
             $dbh->{patroni_replica_dbh} =
               DBI->connect( "dbi:Pg:$replica_dsn", $config->{user},
@@ -75,7 +81,7 @@ sub prepare {
     my $is_readonly = DBD::Patroni::_is_readonly($statement);
     my $target      = $is_readonly ? 'replica' : 'leader';
     my $target_dbh =
-      $is_readonly
+        $is_readonly
       ? $dbh->{patroni_replica_dbh}
       : $dbh->{patroni_leader_dbh};
 
@@ -103,8 +109,7 @@ sub do {
     my $target      = $is_readonly ? 'replica' : 'leader';
 
     my $result = DBD::Patroni::_with_retry(
-        $dbh,
-        $target,
+        $dbh, $target,
         sub {
             my $handle =
                 $is_readonly
@@ -140,8 +145,9 @@ sub disconnect {
     if ( $dbh->{patroni_leader_dbh} ) {
         $dbh->{patroni_leader_dbh}->disconnect;
     }
-    if (   $dbh->{patroni_replica_dbh}
-        && refaddr( $dbh->{patroni_replica_dbh} ) != refaddr( $dbh->{patroni_leader_dbh} ) )
+    if ( $dbh->{patroni_replica_dbh}
+        && refaddr( $dbh->{patroni_replica_dbh} ) !=
+        refaddr( $dbh->{patroni_leader_dbh} ) )
     {
         $dbh->{patroni_replica_dbh}->disconnect;
     }
@@ -223,7 +229,8 @@ sub STORE {
           if $dbh->{patroni_leader_dbh};
         $dbh->{patroni_replica_dbh}->{AutoCommit} = $val
           if $dbh->{patroni_replica_dbh}
-          && refaddr( $dbh->{patroni_replica_dbh} ) != refaddr( $dbh->{patroni_leader_dbh} );
+          && refaddr( $dbh->{patroni_replica_dbh} ) !=
+          refaddr( $dbh->{patroni_leader_dbh} );
         $dbh->{AutoCommit} = $val;
         return 1;
     }
