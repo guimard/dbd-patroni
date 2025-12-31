@@ -62,7 +62,11 @@ sub _discover_cluster {
     # Configure SSL options for Patroni API calls
     if ( defined $ssl_opts->{verify} ) {
         if ( $ssl_opts->{verify} ) {
-            $ua_opts{ssl_opts} = { verify_hostname => 1 };
+            # Enable full SSL verification (hostname + certificate chain)
+            $ua_opts{ssl_opts} = {
+                verify_hostname => 1,
+                SSL_verify_mode => 1,    # IO::Socket::SSL::SSL_VERIFY_PEER
+            };
         }
         else {
             # Disable SSL verification (no hostname check, no cert verification)
